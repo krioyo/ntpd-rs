@@ -1,5 +1,6 @@
-use std::{net::SocketAddr, sync::atomic::AtomicU64};
+use std::{net::SocketAddr, sync::atomic::AtomicU64, time::Duration};
 
+use gps::GpsSpawnError;
 use ntp_proto::{ProtocolVersion, SourceNtsData};
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -16,6 +17,8 @@ pub mod nts;
 pub mod nts_pool;
 pub mod pool;
 pub mod standard;
+pub mod gps;
+pub mod pps;
 
 /// Unique identifier for a spawner.
 /// This is used to identify which spawner was used to create a source
@@ -82,6 +85,8 @@ impl SpawnEvent {
 pub enum SystemEvent {
     SourceRemoved(SourceRemovedEvent),
     SourceRegistered(SourceCreateParameters),
+    GpsSourceRegistered(GpsSourceCreateParameters),
+    PpsSourceRegistered(PpsSourceCreateParameters),
     Idle,
 }
 
@@ -110,6 +115,8 @@ pub enum SourceRemovalReason {
 #[derive(Debug)]
 pub enum SpawnAction {
     Create(SourceCreateParameters),
+    CreateGps(GpsSourceCreateParameters),
+    CreatePps(PpsSourceCreateParameters),
     // Remove(()),
 }
 
@@ -129,6 +136,33 @@ impl SpawnAction {
             nts,
         })
     }
+
+    pub fn create_gps(
+        id: SourceId,
+        addr: String,
+        measurement_noise: f64,
+        baud_rate: u32,
+
+    ) -> SpawnAction{
+        SpawnAction::CreateGps(GpsSourceCreateParameters {
+            id,
+            addr,
+            measurement_noise,
+            baud_rate,
+        })
+    }
+
+    pub fn create_pps(
+        id: SourceId,
+        addr: String,
+        measurement_noise: f64,
+    ) -> SpawnAction{
+        SpawnAction::CreatePps(PpsSourceCreateParameters {
+            id,
+            addr,
+            measurement_noise,
+        })
+    }
 }
 
 #[derive(Debug)]
@@ -138,6 +172,21 @@ pub struct SourceCreateParameters {
     pub normalized_addr: NormalizedAddress,
     pub protocol_version: ProtocolVersion,
     pub nts: Option<Box<SourceNtsData>>,
+}
+
+#[derive(Debug)]
+pub struct GpsSourceCreateParameters {
+    pub id: SourceId,
+    pub addr: String,
+    pub measurement_noise: f64,
+    pub baud_rate: u32,
+}
+
+#[derive(Debug)]
+pub struct PpsSourceCreateParameters {
+    pub id: SourceId,
+    pub addr: String,
+    pub measurement_noise: f64,
 }
 
 #[cfg(test)]
@@ -180,6 +229,43 @@ impl SourceCreateParameters {
     }
 }
 
+#[async_trait::async_trait]
+pub trait PortChecker: Send + Sync {
+    async fn check_port(&self, port_name: String, baud_rate: u32) -> Result<(), GpsSpawnError>;
+}
+
+pub struct RealPortChecker;
+
+#[async_trait::async_trait]
+impl PortChecker for RealPortChecker {
+    async fn check_port(&self, port_name: String, baud_rate: u32) -> Result<(), GpsSpawnError> {
+        let timeout = Duration::from_secs(1);
+
+        let mut port = serialport::new(port_name, baud_rate)
+            .timeout(timeout)
+            .open()
+            .map_err(|_e| {
+                GpsSpawnError::PortNotOpen
+            })?;
+
+        if let Err(_e) = port.set_timeout(timeout) {
+            return Err(GpsSpawnError::PortNotOpen)
+        }
+
+        drop(port);
+
+        Ok(())
+    }
+}
+
+pub struct MockPortChecker;
+
+#[async_trait::async_trait]
+impl PortChecker for MockPortChecker {
+    async fn check_port(&self, _port_name: String, _baud_rate: u32) -> Result<(), GpsSpawnError> {
+        Ok(())
+    }
+}
 #[async_trait::async_trait]
 pub trait Spawner {
     type Error: std::error::Error + Send;
@@ -246,6 +332,21 @@ pub trait BasicSpawner {
         Ok(())
     }
 
+    async fn handle_gps_registered(
+        &mut self,
+        _event: GpsSourceCreateParameters,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    async fn handle_pps_registered(
+        &mut self,
+        _event: PpsSourceCreateParameters,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+
     /// Get the id of the spawner
     fn get_id(&self) -> SpawnerId;
 
@@ -305,6 +406,12 @@ where
                 SystemEvent::SourceRemoved(removed_source) => {
                     self.handle_source_removed(removed_source).await?;
                 }
+                SystemEvent::GpsSourceRegistered(source_params) => {
+                    self.handle_gps_registered(source_params).await?;
+                }
+                SystemEvent::PpsSourceRegistered(source_params) => {
+                    self.handle_pps_registered(source_params).await?;
+                }
                 SystemEvent::Idle => {}
             }
         }
@@ -327,10 +434,31 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::{SourceCreateParameters, SpawnAction, SpawnEvent};
+    use super::{GpsSourceCreateParameters, PpsSourceCreateParameters, SourceCreateParameters, SpawnAction, SpawnEvent};
 
     pub fn get_create_params(res: SpawnEvent) -> SourceCreateParameters {
-        let SpawnAction::Create(params) = res.action;
-        params
+        if let SpawnAction::Create(params) = res.action {
+            params
+        } else {
+            panic!("Expected SpawnAction::Create variant");
+        }
     }
+
+    pub fn get_create_gps_params(res: SpawnEvent) -> GpsSourceCreateParameters {
+        if let SpawnAction::CreateGps(params) = res.action {
+            params
+        } else {
+            panic!("Expected SpawnAction::Create variant");
+        }
+    }
+
+    pub fn get_create_pps_params(res: SpawnEvent) -> PpsSourceCreateParameters {
+        if let SpawnAction::CreatePps(params) = res.action {
+            params
+        } else {
+            panic!("Expected SpawnAction::Create variant");
+        }
+    }
+
+   
 }

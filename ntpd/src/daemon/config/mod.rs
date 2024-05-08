@@ -423,6 +423,8 @@ impl Config {
                 NtpSourceConfig::Standard(_) => count += 1,
                 NtpSourceConfig::Nts(_) => count += 1,
                 NtpSourceConfig::Pool(config) => count += config.count,
+                NtpSourceConfig::Gps(_) => count += 1,
+                NtpSourceConfig::Pps(_) => count += 1,
                 #[cfg(feature = "unstable_nts-pool")]
                 NtpSourceConfig::NtsPool(config) => count += config.count,
             }
@@ -434,7 +436,7 @@ impl Config {
     /// configuration is egregious, although it doesn't do so currently.
     pub fn check(&self) -> bool {
         let mut ok = true;
-
+        info!("check config");
         // Note: since we only check once logging is fully configured,
         // using those fields should always work. This is also
         // probably a good policy in general (config should always work

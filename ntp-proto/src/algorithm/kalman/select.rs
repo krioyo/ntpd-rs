@@ -15,13 +15,14 @@ enum BoundType {
 // is also statistically more sound. Any difference (larger set of accepted sources)
 // can be compensated for if desired by setting tighter bounds on the weights
 // determining the confidence interval.
+
 pub(super) fn select<Index: Copy>(
     synchronization_config: &SynchronizationConfig,
     algo_config: &AlgorithmConfig,
     candidates: Vec<SourceSnapshot<Index>>,
 ) -> Vec<SourceSnapshot<Index>> {
     let mut bounds: Vec<(f64, BoundType)> = Vec::with_capacity(2 * candidates.len());
-
+    
     for snapshot in candidates.iter() {
         let radius = snapshot.offset_uncertainty() * algo_config.range_statistical_weight
             + snapshot.delay * algo_config.range_delay_weight;
@@ -51,7 +52,6 @@ pub(super) fn select<Index: Copy>(
             maxt = *time;
         }
     }
-
     if max >= synchronization_config.minimum_agreeing_sources && max * 4 > bounds.len() {
         candidates
             .iter()
@@ -96,6 +96,108 @@ mod tests {
             last_update: NtpTimestamp::from_fixed_int(0),
         }
     }
+
+    #[test]
+    fn test_no_candidates() {
+        // Test that no candidates are selected when input is empty.
+        let candidates: Vec<SourceSnapshot<usize>> = vec![];
+        let sysconfig = SynchronizationConfig {
+            minimum_agreeing_sources: 1,
+            ..Default::default()
+        };
+        let algconfig = AlgorithmConfig {
+            maximum_source_uncertainty: 1.0,
+            range_statistical_weight: 1.0,
+            range_delay_weight: 1.0,
+            ..Default::default()
+        };
+        let result = select(&sysconfig, &algconfig, candidates);
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_all_rejected_due_to_leap_indicator() {
+        // Test that all candidates are rejected if their leap indicator is not synchronized.
+        let candidates = vec![
+            SourceSnapshot {
+                index: 0,
+                state: Vector::new_vector([0.0, 0.0]),
+                uncertainty: Matrix::new([[sqr(0.01), 0.0], [0.0, 10e-12]]),
+                delay: 0.01,
+                source_uncertainty: NtpDuration::from_seconds(0.01),
+                source_delay: NtpDuration::from_seconds(0.01),
+                leap_indicator: NtpLeapIndicator::Unknown,
+                last_update: NtpTimestamp::from_fixed_int(0),
+            },
+            SourceSnapshot {
+                index: 1,
+                state: Vector::new_vector([0.1, 0.0]),
+                uncertainty: Matrix::new([[sqr(0.01), 0.0], [0.0, 10e-12]]),
+                delay: 0.01,
+                source_uncertainty: NtpDuration::from_seconds(0.01),
+                source_delay: NtpDuration::from_seconds(0.01),
+                leap_indicator: NtpLeapIndicator::Unknown,
+                last_update: NtpTimestamp::from_fixed_int(0),
+            },
+        ];
+        let sysconfig = SynchronizationConfig {
+            minimum_agreeing_sources: 1,
+            ..Default::default()
+        };
+        let algconfig = AlgorithmConfig {
+            maximum_source_uncertainty: 1.0,
+            range_statistical_weight: 1.0,
+            range_delay_weight: 1.0,
+            ..Default::default()
+        };
+        let result = select(&sysconfig, &algconfig, candidates);
+        assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn test_overlap_within_bounds() {
+        // Test that candidates with sufficient overlap are selected.
+        let candidates = vec![
+            snapshot_for_range(0.0, 0.1, 0.1),
+            snapshot_for_range(0.0, 0.1, 0.1),
+            snapshot_for_range(0.0, 0.1, 0.1),
+            snapshot_for_range(0.0, 0.1, 0.1),
+        ];
+        let sysconfig = SynchronizationConfig {
+            minimum_agreeing_sources: 2,
+            ..Default::default()
+        };
+        let algconfig = AlgorithmConfig {
+            maximum_source_uncertainty: 1.0,
+            range_statistical_weight: 1.0,
+            range_delay_weight: 1.0,
+            ..Default::default()
+        };
+        let result = select(&sysconfig, &algconfig, candidates);
+        assert_eq!(result.len(), 4);
+    }
+
+    #[test]
+    fn test_edge_case_uncertainty() {
+        // Test edge case where uncertainty is exactly on the boundary.
+        let candidates = vec![
+            snapshot_for_range(0.0, 0.1, 0.1),
+            snapshot_for_range(0.2, 0.1, 0.1),
+        ];
+        let sysconfig = SynchronizationConfig {
+            minimum_agreeing_sources: 1,
+            ..Default::default()
+        };
+        let algconfig = AlgorithmConfig {
+            maximum_source_uncertainty: 0.2,
+            range_statistical_weight: 1.0,
+            range_delay_weight: 1.0,
+            ..Default::default()
+        };
+        let result = select(&sysconfig, &algconfig, candidates);
+        assert_eq!(result.len(), 2);
+    }
+
 
     #[test]
     fn test_weighing() {

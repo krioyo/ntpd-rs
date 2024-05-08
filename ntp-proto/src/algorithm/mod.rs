@@ -54,6 +54,7 @@ pub trait TimeSyncController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug>: S
         synchronization_config: SynchronizationConfig,
         source_defaults_config: SourceDefaultsConfig,
         algorithm_config: Self::AlgorithmConfig,
+        pps_source_id: Option<SourceId>,
     ) -> Result<Self, C::Error>;
     /// Update used system config
     fn update_config(
@@ -69,10 +70,17 @@ pub trait TimeSyncController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug>: S
     /// Notify the controller that the status of a source (whether
     /// or not it is usable for synchronization) has changed.
     fn source_update(&mut self, id: SourceId, usable: bool);
+    fn source_pps_update(&mut self, id: SourceId, usable: bool);
     /// Notify the controller of a new measurement from a source.
     /// The list of SourceIds is used for loop detection, with the
     /// first SourceId given considered the primary source used.
     fn source_measurement(
+        &mut self,
+        id: SourceId,
+        measurement: Measurement,
+    ) -> StateUpdate<SourceId>;
+
+    fn source_pps_measurement(
         &mut self,
         id: SourceId,
         measurement: Measurement,
@@ -83,7 +91,7 @@ pub trait TimeSyncController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug>: S
     fn source_snapshot(&self, id: SourceId) -> Option<ObservableSourceTimedata>;
 }
 
-mod kalman;
+pub mod kalman;
 
 pub use kalman::config::AlgorithmConfig;
 pub use kalman::KalmanClockController;

@@ -17,6 +17,22 @@ Be sure to check out the [documentation website] as it includes guides on gettin
 
 ## Usage
 
+If you have a device with gps receiver, build the repo with cargo build and while in project dirr. To configure the GPS, add the GPS configuration to any configuration file (.toml), example:
+
+```
+[[source]]
+mode = "Gps"
+address = "/dev/serial0"
+measurement_noise = 0.001
+baud_rate = 9600
+```
+
+Run the executable with a configuration by running. 
+
+```console
+$ ./target/release/ntp-daemon --config ./config/any configuration file.toml
+```
+
 You can install the packages from the [releases page]. These packages configure ntpd-rs to synchronize your computers clock to servers from the [NTP pool]. After installation, check the status of the ntpd-rs daemon with
 
 ```console
@@ -105,3 +121,4 @@ In July of 2023 the [Sovereign Tech Fund] invested in Pendulum, securing ntpd-rs
 [NTP announcement]: https://www.memorysafety.org/blog/ntp-and-nts-have-arrived/
 [Project Pendulum]: https://github.com/pendulum-project
 [Sovereign Tech Fund]: https://sovereigntechfund.de/en/
+

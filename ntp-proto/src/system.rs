@@ -10,6 +10,8 @@ use crate::packet::v5::server_reference_id::{BloomFilter, ServerId};
 use crate::source::NtpSourceUpdate;
 #[cfg(feature = "ntpv5")]
 use crate::source::ProtocolVersion;
+use crate::gps_source::GpsSourceUpdate;
+use crate::PpsSourceUpdate;
 use crate::{
     algorithm::{KalmanClockController, ObservableSourceTimedata, StateUpdate, TimeSyncController},
     clock::NtpClock,
@@ -126,6 +128,7 @@ pub struct System<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> {
     controller: Option<KalmanClockController<C, SourceId>>,
 }
 
+
 impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
     pub fn new(
         clock: C,
@@ -167,6 +170,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
                 self.synchronization_config,
                 self.source_defaults_config,
                 self.synchronization_config.algorithm,
+                None,
             )?,
         };
         Ok(self.controller.insert(controller))
@@ -201,20 +205,51 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         *self.sources.get_mut(&id).unwrap() = Some(update.snapshot);
         if let Some(measurement) = update.measurement {
             let update = self.clock_controller()?.source_measurement(id, measurement);
-            Ok(self.handle_algorithm_state_update(update))
+            Ok(self.handle_algorithm_state_update(update, false))
+        } else {
+            Ok(None)
+        }
+    }
+    pub fn handle_gps_source_update(
+        &mut self,
+        id: SourceId,
+        update: GpsSourceUpdate,
+    ) -> Result<Option<Duration>, C::Error> {
+        self.clock_controller()?.source_update(id, true);
+        if let Some(measurement) = update.measurement {
+            let update = self.clock_controller()?.source_measurement(id, measurement);
+            Ok(self.handle_algorithm_state_update(update, true))
         } else {
             Ok(None)
         }
     }
 
-    fn handle_algorithm_state_update(&mut self, update: StateUpdate<SourceId>) -> Option<Duration> {
+    pub fn handle_pps_source_update(
+        &mut self,
+        id: SourceId,
+        update: PpsSourceUpdate,
+    ) -> Result<Option<Duration>, C::Error> {
+        self.clock_controller()?.source_update(id, true);
+        if let Some(measurement) = update.measurement {
+            let update = self.clock_controller()?.source_measurement(id, measurement);
+            Ok(self.handle_algorithm_state_update(update, true))
+        } else {
+            Ok(None)
+        }
+    }
+
+    
+
+    fn handle_algorithm_state_update(&mut self, update: StateUpdate<SourceId>, gps: bool) -> Option<Duration> {
         if let Some(ref used_sources) = update.used_sources {
-            self.system
-                .update_used_sources(used_sources.iter().map(|v| {
-                    self.sources.get(v).and_then(|snapshot| *snapshot).expect(
-                    "Critical error: Source used for synchronization that is not known to system",
-                )
-                }));
+            if !gps {
+                self.system
+                    .update_used_sources(used_sources.iter().map(|v| {
+                        self.sources.get(v).and_then(|snapshot| *snapshot).expect(
+                        "Critical error: Source used for synchronization that is not known to system",
+                    )
+                    }));
+            }
         }
         if let Some(time_snapshot) = update.time_snapshot {
             self.system
@@ -228,7 +263,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> System<C, SourceId> {
         // note: local needed for borrow checker
         if let Some(controller) = self.controller.as_mut() {
             let update = controller.time_update();
-            self.handle_algorithm_state_update(update)
+            self.handle_algorithm_state_update(update, false)
         } else {
             None
         }

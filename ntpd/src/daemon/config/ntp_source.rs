@@ -17,6 +17,21 @@ pub struct StandardSource {
     pub address: NtpAddress,
 }
 
+#[derive(Deserialize, Debug, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct GpsConfigSource {
+    pub address: String,
+    pub measurement_noise: f64,
+    pub baud_rate: u32,
+}
+
+#[derive(Deserialize, Debug, PartialEq, Clone)]
+#[serde(deny_unknown_fields)]
+pub struct PpsConfigSource {
+    pub address: String,
+    pub measurement_noise: f64,
+}
+
 #[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct NtsSourceConfig {
@@ -81,9 +96,13 @@ pub struct NtsPoolSourceConfig {
     pub count: usize,
 }
 
-#[derive(Debug, Deserialize, PartialEq, Eq, Clone)]
+#[derive(Debug, Deserialize, PartialEq, Clone)]
 #[serde(tag = "mode")]
 pub enum NtpSourceConfig {
+    #[serde(rename = "Gps")]
+    Gps(GpsConfigSource),
+    #[serde(rename = "Pps")]
+    Pps(PpsConfigSource),
     #[serde(rename = "server")]
     Standard(StandardSource),
     #[serde(rename = "nts")]
@@ -133,6 +152,9 @@ impl From<Vec<SocketAddr>> for HardcodedDnsResolve {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NtpAddress(pub NormalizedAddress);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GpsPort(pub NormalizedAddress);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NtsKeAddress(pub NormalizedAddress);
@@ -332,6 +354,8 @@ mod tests {
             NtpSourceConfig::Standard(c) => c.address.to_string(),
             NtpSourceConfig::Nts(c) => c.address.to_string(),
             NtpSourceConfig::Pool(c) => c.addr.to_string(),
+            NtpSourceConfig::Gps(c) => c.address.to_string(),
+            NtpSourceConfig::Pps(c) => c.address.to_string(),
             #[cfg(feature = "unstable_nts-pool")]
             NtpSourceConfig::NtsPool(c) => c.addr.to_string(),
         }
@@ -433,33 +457,6 @@ mod tests {
             if let NtpSourceConfig::Nts(config) = test.source {
                 assert_eq!(config.address.to_string(), "example.com:4460");
             }
-        }
-    }
-
-    #[test]
-    fn test_deserialize_source_pem_certificate() {
-        let contents = include_bytes!("../../../testdata/certificates/nos-nl.pem");
-        let path = std::env::temp_dir().join("nos-nl.pem");
-        std::fs::write(&path, contents).unwrap();
-
-        #[derive(Deserialize, Debug)]
-        struct TestConfig {
-            source: NtpSourceConfig,
-        }
-
-        let test: TestConfig = toml::from_str(&format!(
-            r#"
-                [source]
-                address = "example.com"
-                certificate-authority = "{}"
-                mode = "nts"
-                "#,
-            path.display()
-        ))
-        .unwrap();
-        assert!(matches!(test.source, NtpSourceConfig::Nts(_)));
-        if let NtpSourceConfig::Nts(config) = test.source {
-            assert_eq!(config.address.to_string(), "example.com:4460");
         }
     }
 

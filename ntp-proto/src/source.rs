@@ -87,6 +87,17 @@ pub struct NtpSource {
 }
 
 #[derive(Debug, Copy, Clone)]
+pub struct GpsMeasurement {
+    pub measurementnoise: NtpDuration,
+    pub offset: NtpDuration,
+}
+#[derive(Debug, Copy, Clone)]
+pub struct PpsMeasurement {
+    pub measurementnoise: NtpDuration,
+    pub offset: NtpDuration,
+}
+
+#[derive(Debug, Copy, Clone)]
 pub struct Measurement {
     pub delay: NtpDuration,
     pub offset: NtpDuration,
@@ -100,6 +111,11 @@ pub struct Measurement {
     pub root_dispersion: NtpDuration,
     pub leap: NtpLeapIndicator,
     pub precision: i8,
+
+    // New fields from GpsMeasurement
+    pub gps: Option<GpsMeasurement>,
+    // New fields from PpsMeasurement
+    pub pps: Option<PpsMeasurement>,
 }
 
 impl Measurement {
@@ -121,15 +137,93 @@ impl Measurement {
             receive_timestamp: packet.receive_timestamp(),
             localtime: send_timestamp + (recv_timestamp - send_timestamp) / 2,
             monotime: local_clock_time,
-
             stratum: packet.stratum(),
             root_delay: packet.root_delay(),
             root_dispersion: packet.root_dispersion(),
             leap: packet.leap(),
             precision: packet.precision(),
+            gps: None, 
+            pps:None,
+        }
+    }
+
+    // create a new measurement for gps by the data recieved
+    // the fields needed are the offset, monotime, timestamp and noise.
+    // offset is one of the inputs for the stable and initial kalman which is used to measure
+    // how much off the current measurement varies from the system time
+    // monotime is recieved immediately when we recieve the measurement from the settalite
+    // this is needed in the latter stages of the algorithm to check if the clock is steered in an unusual way
+    // since the monotime or instant is a seperate clock that doesn't get affected by steering and always moves forward
+    // timestamp is the measurement we recieve from the settalite which is also sent to the kalman
+    // because the filter uses the last measurement time and the current measurement time to update
+    // the estiamted offset and frequency error. this is done by calculating a delta t 
+    // (how much time have passed during each measurement according to this source)
+    // lastly a noise is recieved which in this case can be changed from the config and this depends on the hardware used
+    pub fn from_gps(
+        offset: NtpDuration, 
+        local_clock_time: NtpInstant,
+        timestamp: NtpTimestamp,
+        measuremet_noise: f64,
+    ) -> Self {
+        Self {
+            delay: NtpDuration::default(),
+            offset: NtpDuration::default(),
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: timestamp,
+            monotime: local_clock_time,
+            stratum: 1,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: Some(GpsMeasurement {
+                measurementnoise: NtpDuration::from_seconds(measuremet_noise),
+                offset,
+            }),
+            pps:None,
+        }
+    }
+    // create a new measurement for pps by the data recieved
+    // the fields needed are the offset, monotime, timestamp and noise.
+    // offset is one of the inputs for the stable and initial kalman which is used to measure
+    // how much off the current measurement varies from the system time
+    // monotime is recieved immediately when we recieve the measurement from the kernel
+    // this is needed in the latter stages of the algorithm to check if the clock is steered in an unusual way
+    // since the monotime or instant is a seperate clock that doesn't get affected by steering and always moves forward
+    // timestamp is the measurement we recieve from the kernel which is also sent to the kalman
+    // because the filter uses the last measurement time and the current measurement time to update
+    // the estiamted offset and frequency error. this is done by calculating a delta t 
+    // (how much time have passed during each measurement according to this source)
+    // lastly a noise is recieved which in this case can be changed from the config and this depends on the hardware used
+    pub fn from_pps(
+        offset: NtpDuration, 
+        local_clock_time: NtpInstant,
+        ntp_timestamp: NtpTimestamp,
+        measurement_noise: f64
+    ) -> Self {
+        Self {
+            delay: NtpDuration::default(),
+            offset: NtpDuration::default(),
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: ntp_timestamp,
+            monotime: local_clock_time,
+
+            stratum: 1,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: None,
+            pps: Some(PpsMeasurement {
+                measurementnoise: NtpDuration::from_seconds(measurement_noise),
+                offset,
+            }),
         }
     }
 }
+
 
 /// Used to determine whether the server is reachable and the data are fresh
 ///
@@ -717,7 +811,6 @@ impl NtpSource {
                 nts.cookies.store(cookie);
             }
         }
-
         actions!(NtpSourceAction::UpdateSystem(NtpSourceUpdate {
             snapshot: NtpSourceSnapshot::from_source(self),
             measurement: Some(measurement),
@@ -787,6 +880,10 @@ pub fn fuzz_measurement_from_packet(
 #[cfg(test)]
 mod test {
     use crate::{packet::NoCipher, time_types::PollIntervalLimits, NtpClock};
+    use crate::time_types::{NtpDuration, NtpTimestamp, NtpInstant};
+
+    use crate::algorithm::kalman::source::{InitialSourceFilter, SourceFilter};
+    use crate::algorithm::kalman::matrix::{Matrix, Vector};
 
     use super::*;
     #[cfg(feature = "ntpv5")]
@@ -1521,4 +1618,885 @@ mod test {
 
         assert_eq!(Some(&server_filter), client.bloom_filter.full_filter());
     }
-}
+
+    /// Tests that the Measurement struct initializes correctly without GPS data.
+    #[test]
+    fn test_measurement_without_gps() {
+        let measurement = Measurement {
+            delay: NtpDuration::from_seconds(0.001),
+            offset: NtpDuration::from_seconds(1.0),
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
+            monotime: NtpInstant::now(),
+            stratum: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: None,
+            pps: None,
+        };
+
+        assert_eq!(measurement.delay, NtpDuration::from_seconds(0.001));
+        assert_eq!(measurement.offset, NtpDuration::from_seconds(1.0));
+        assert!(measurement.gps.is_none());
+    }
+
+    /// Tests that the Measurement struct initializes correctly with GPS data.
+    #[test]
+    fn test_measurement_with_gps() {
+        let gps_measurement = GpsMeasurement {
+            measurementnoise: NtpDuration::from_seconds(0.001),
+            offset: NtpDuration::from_seconds(1.0),
+        };
+
+        let measurement = Measurement {
+            delay: NtpDuration::from_seconds(0.001),
+            offset: NtpDuration::from_seconds(1.0),
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
+            monotime: NtpInstant::now(),
+            stratum: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: Some(gps_measurement),
+            pps: None,
+        };
+
+        // Assert that the fields are correctly set
+        assert_eq!(measurement.delay, NtpDuration::from_seconds(0.001));
+        assert_eq!(measurement.offset, NtpDuration::from_seconds(1.0));
+        assert!(measurement.gps.is_some());
+
+        let gps = measurement.gps.unwrap();
+        assert_eq!(gps.measurementnoise, NtpDuration::from_seconds(0.001));
+        assert_eq!(gps.offset, NtpDuration::from_seconds(1.0));
+    }
+
+    /// Tests that the InitialSourceFilter updates correctly with GPS data.
+    #[test]
+    fn test_initial_source_filter_update_with_gps() {
+        let gps_measurement = GpsMeasurement {
+            measurementnoise: NtpDuration::from_seconds(0.001),
+            offset: NtpDuration::from_seconds(1.0),
+        };
+
+        let measurement = Measurement {
+            delay: NtpDuration::from_seconds(0.001),
+            offset: NtpDuration::from_seconds(1.0),
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
+            monotime: NtpInstant::now(),
+            stratum: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: Some(gps_measurement),
+            pps: None,
+        };
+
+        let mut initial_filter = InitialSourceFilter {
+            roundtriptime_stats: Default::default(),
+            init_offset: Default::default(),
+            last_measurement: None,
+            samples: 0,
+        };
+
+        initial_filter.update(measurement);
+
+        assert_eq!(initial_filter.samples, 1);
+        assert!(initial_filter.last_measurement.is_some());
+
+        let last_measurement = initial_filter.last_measurement.unwrap();
+        assert!(last_measurement.gps.is_some());
+    }
+
+    /// Tests that the SourceFilter absorbs a measurement correctly with GPS data.
+    #[test]
+    fn test_absorb_measurement_with_gps() {
+        let gps_measurement = GpsMeasurement {
+            measurementnoise: NtpDuration::from_seconds(0.001),
+            offset: NtpDuration::from_seconds(1.0),
+        };
+
+        let measurement = Measurement {
+            delay: NtpDuration::from_seconds(0.001),
+            offset: NtpDuration::from_seconds(1.0),
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
+            monotime: NtpInstant::now(),
+            stratum: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: Some(gps_measurement),
+            pps: None,
+        };
+
+        let mut source_filter = SourceFilter {
+            state: Vector::new_vector([0.0, 0.0]),
+            uncertainty: Matrix::new([[1.0, 0.0], [0.0, 1.0]]),
+            clock_wander: 1.0,
+            roundtriptime_stats: Default::default(),
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: Default::default(),
+            last_measurement: measurement.clone(),
+            prev_was_outlier: false,
+            last_iter: NtpTimestamp::default(),
+            filter_time: NtpTimestamp::default(),
+        };
+
+        let (p, weight, m_delta_t) = source_filter.absorb_measurement(measurement);
+
+        assert!(p >= 0.0 && p <= 1.0);
+        assert!(weight >= 0.0 && weight <= 1.0);
+        assert!(m_delta_t >= 0.0);
+    }
+
+    /// Tests a measurement that has duration 0 and offset 0.
+    #[test]
+    fn test_measurement_with_zero_duration() {
+        let gps_measurement = GpsMeasurement {
+            measurementnoise: NtpDuration::ZERO,
+            offset: NtpDuration::ZERO,
+        };
+
+        let measurement = Measurement {
+            delay: NtpDuration::ZERO,
+            offset: NtpDuration::ZERO,
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
+            monotime: NtpInstant::now(),
+            stratum: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: Some(gps_measurement),
+            pps: None,
+        };
+
+        assert_eq!(measurement.delay, NtpDuration::ZERO);
+        assert_eq!(measurement.offset, NtpDuration::ZERO);
+        assert!(measurement.gps.is_some());
+    }
+
+    /// Tests that SourceFilter is initialized correctly with default values.
+    #[test]
+    fn test_source_filter_initialization() {
+        let source_filter = SourceFilter {
+            state: Vector::new_vector([0.0, 0.0]),
+            uncertainty: Matrix::new([[1.0, 0.0], [0.0, 1.0]]),
+            clock_wander: 1.0,
+            roundtriptime_stats: Default::default(),
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: Default::default(),
+            last_measurement: Measurement {
+                delay: NtpDuration::default(),
+                offset: NtpDuration::default(),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
+                localtime: NtpTimestamp::default(),
+                monotime: NtpInstant::now(),
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+                gps: None,
+                pps: None,
+            },
+            prev_was_outlier: false,
+            last_iter: NtpTimestamp::default(),
+            filter_time: NtpTimestamp::default(),
+        };
+
+        assert_eq!(source_filter.state.entry(0, 0), 0.0);
+        assert_eq!(source_filter.state.entry(1, 0), 0.0);
+        assert_eq!(source_filter.uncertainty.entry(0, 0), 1.0);
+        assert_eq!(source_filter.uncertainty.entry(1, 1), 1.0);
+        assert_eq!(source_filter.clock_wander, 1.0);
+    }
+
+    /// Tests that SourceFilter correctly identifies and handles an outlier measurement.
+    #[test]
+    fn test_source_filter_handling_outliers() {
+        let mut source_filter = SourceFilter {
+            state: Vector::new_vector([0.0, 0.0]),
+            uncertainty: Matrix::new([[1.0, 0.0], [0.0, 1.0]]),
+            clock_wander: 1.0,
+            roundtriptime_stats: Default::default(),
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: Default::default(),
+            last_measurement: Measurement {
+                delay: NtpDuration::from_seconds(0.001),
+                offset: NtpDuration::from_seconds(1.0),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
+                localtime: NtpTimestamp::default(),
+                monotime: NtpInstant::now(),
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+                gps: None,
+                pps: None,
+            },
+            prev_was_outlier: false,
+            last_iter: NtpTimestamp::default(),
+            filter_time: NtpTimestamp::default(),
+        };
+
+        let outlier_measurement = Measurement {
+            delay: NtpDuration::from_seconds(100.0),
+            offset: NtpDuration::from_seconds(50.0),
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
+            monotime: NtpInstant::now(),
+            stratum: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: None,
+            pps: None,
+        };
+
+        // The filter should identify this as an outlier
+        let is_updated = source_filter.absorb_measurement(outlier_measurement).0;
+        assert!(is_updated >= 0.0 && is_updated <= 1.0);
+    }
+
+
+    /// Tests that Measurement struct handles maximum possible duration time properly.
+    #[test]
+    fn test_measurement_with_max_duration() {
+        let max_duration = NtpDuration::from_seconds(u64::MAX as f64);
+
+        let gps_measurement = GpsMeasurement {
+            measurementnoise: max_duration,
+            offset: max_duration,
+        };
+
+        let measurement = Measurement {
+            delay: max_duration,
+            offset: max_duration,
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
+            monotime: NtpInstant::now(),
+            stratum: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: Some(gps_measurement),
+            pps: None,
+        };
+
+        assert_eq!(measurement.delay, max_duration);
+        assert_eq!(measurement.offset, max_duration);
+        assert!(measurement.gps.is_some());
+
+        let gps = measurement.gps.unwrap();
+        assert_eq!(gps.measurementnoise, max_duration);
+        assert_eq!(gps.offset, max_duration);
+    }
+
+    /// Ensures that InitialSourceFilter resets correctly.
+    #[test]
+    fn test_initial_source_filter_reset() {
+        let gps_measurement = GpsMeasurement {
+            measurementnoise: NtpDuration::from_seconds(0.001),
+            offset: NtpDuration::from_seconds(1.0),
+        };
+
+        let measurement = Measurement {
+            delay: NtpDuration::from_seconds(0.001),
+            offset: NtpDuration::from_seconds(1.0),
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
+            monotime: NtpInstant::now(),
+            stratum: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: Some(gps_measurement),
+            pps: None,
+        };
+
+        let mut initial_filter = InitialSourceFilter {
+            roundtriptime_stats: Default::default(),
+            init_offset: Default::default(),
+            last_measurement: None,
+            samples: 0,
+        };
+
+        initial_filter.update(measurement);
+
+        assert_eq!(initial_filter.samples, 1);
+        assert!(initial_filter.last_measurement.is_some());
+
+        // Reset filter
+        initial_filter = InitialSourceFilter {
+            roundtriptime_stats: Default::default(),
+            init_offset: Default::default(),
+            last_measurement: None,
+            samples: 0,
+        };
+
+        // Assert filter has reset
+        assert_eq!(initial_filter.samples, 0);
+        assert!(initial_filter.last_measurement.is_none());
+    }
+
+    #[test]
+    fn test_poll_interval_calculation() {
+        let mut source = NtpSource::test_ntp_source();
+        let mut system = SystemSnapshot::default();
+
+        system.time_snapshot.poll_interval = PollIntervalLimits::default().max;
+        assert_eq!(
+            source.current_poll_interval(system),
+            PollIntervalLimits::default().max
+        );
+
+        system.time_snapshot.poll_interval = PollIntervalLimits::default().min;
+        source.remote_min_poll_interval = PollIntervalLimits::default().max;
+        assert_eq!(
+            source.current_poll_interval(system),
+            PollIntervalLimits::default().max
+        );
+    }
+
+    #[test]
+    fn test_handle_rate_limiting() {
+        let base = NtpInstant::now();
+        let mut source = NtpSource::test_ntp_source();
+
+        let system = SystemSnapshot::default();
+        let actions = source.handle_timer(system);
+        let mut outgoingbuf = None;
+        for action in actions {
+            if let NtpSourceAction::Send(buf) = action {
+                outgoingbuf = Some(buf);
+            }
+        }
+        let outgoingbuf = outgoingbuf.unwrap();
+        let outgoing = NtpPacket::deserialize(&outgoingbuf, &NoCipher).unwrap().0;
+        let mut packet = NtpPacket::test();
+        packet.set_reference_id(ReferenceId::KISS_RATE);
+        packet.set_origin_timestamp(outgoing.transmit_timestamp());
+        packet.set_mode(NtpAssociationMode::Server);
+
+        let actions = source.handle_incoming(
+            system,
+            &packet.serialize_without_encryption_vec(None).unwrap(),
+            base + Duration::from_secs(1),
+            NtpTimestamp::from_fixed_int(0),
+            NtpTimestamp::from_fixed_int(400),
+        );
+        for action in actions {
+            assert!(matches!(action, NtpSourceAction::UpdateSystem(_))); //update the system without taking further actions
+        }
+        assert_eq!(
+            source.remote_min_poll_interval,
+            source.last_poll_interval.inc(source.source_defaults_config.poll_interval_limits)
+        );
+    }
+
+    #[test]
+    fn test_gps_data_processing() {
+        let gps_measurement = GpsMeasurement {
+            measurementnoise: NtpDuration::from_seconds(0.001),
+            offset: NtpDuration::from_seconds(1.0),
+        };
+
+        let measurement = Measurement {
+            delay: NtpDuration::from_seconds(0.001),
+            offset: NtpDuration::from_seconds(1.0),
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: NtpTimestamp::default(),
+            monotime: NtpInstant::now(),
+            stratum: 0,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: Some(gps_measurement),
+            pps: None,
+        };
+
+        let mut source_filter = SourceFilter {
+            state: Vector::new_vector([0.0, 0.0]),
+            uncertainty: Matrix::new([[1.0, 0.0], [0.0, 1.0]]),
+            clock_wander: 1.0,
+            roundtriptime_stats: Default::default(),
+            precision_score: 0,
+            poll_score: 0,
+            desired_poll_interval: Default::default(),
+            last_measurement: measurement.clone(),
+            prev_was_outlier: false,
+            last_iter: NtpTimestamp::default(),
+            filter_time: NtpTimestamp::default(),
+        };
+
+        let (p, weight, m_delta_t) = source_filter.absorb_measurement(measurement);
+
+        assert!(p >= 0.0 && p <= 1.0);
+        assert!(weight >= 0.0 && weight <= 1.0);
+        assert!(m_delta_t >= 0.0);
+    }    
+
+        /// Tests that the Measurement struct initializes correctly with PPS data.
+        #[test]
+        fn test_measurement_with_pps() {
+            let pps_measurement = PpsMeasurement {
+                measurementnoise: NtpDuration::from_seconds(0.001),
+                offset: NtpDuration::from_seconds(1.0),
+            };
+    
+            let measurement = Measurement {
+                delay: NtpDuration::from_seconds(0.001),
+                offset: NtpDuration::from_seconds(1.0),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
+                localtime: NtpTimestamp::default(),
+                monotime: NtpInstant::now(),
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+                gps: None,
+                pps: Some(pps_measurement),
+            };
+    
+            assert_eq!(measurement.delay, NtpDuration::from_seconds(0.001));
+            assert_eq!(measurement.offset, NtpDuration::from_seconds(1.0));
+            assert!(measurement.pps.is_some());
+    
+            let pps = measurement.pps.unwrap();
+            assert_eq!(pps.measurementnoise, NtpDuration::from_seconds(0.001));
+            assert_eq!(pps.offset, NtpDuration::from_seconds(1.0));
+        }
+    
+        /// Tests that the Measurement struct initializes correctly with both GPS and PPS data.
+        #[test]
+        fn test_measurement_with_gps_and_pps() {
+            let gps_measurement = GpsMeasurement {
+                measurementnoise: NtpDuration::from_seconds(0.001),
+                offset: NtpDuration::from_seconds(1.0),
+            };
+    
+            let pps_measurement = PpsMeasurement {
+                measurementnoise: NtpDuration::from_seconds(0.002),
+                offset: NtpDuration::from_seconds(2.0),
+            };
+    
+            let measurement = Measurement {
+                delay: NtpDuration::from_seconds(0.001),
+                offset: NtpDuration::from_seconds(1.0),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
+                localtime: NtpTimestamp::default(),
+                monotime: NtpInstant::now(),
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+                gps: Some(gps_measurement),
+                pps: Some(pps_measurement),
+            };
+    
+            assert_eq!(measurement.delay, NtpDuration::from_seconds(0.001));
+            assert_eq!(measurement.offset, NtpDuration::from_seconds(1.0));
+            assert!(measurement.gps.is_some());
+            assert!(measurement.pps.is_some());
+    
+            let gps = measurement.gps.unwrap();
+            assert_eq!(gps.measurementnoise, NtpDuration::from_seconds(0.001));
+            assert_eq!(gps.offset, NtpDuration::from_seconds(1.0));
+    
+            let pps = measurement.pps.unwrap();
+            assert_eq!(pps.measurementnoise, NtpDuration::from_seconds(0.002));
+            assert_eq!(pps.offset, NtpDuration::from_seconds(2.0));
+        }
+    
+        /// Tests that InitialSourceFilter updates correctly with PPS data.
+        #[test]
+        fn test_initial_source_filter_update_with_pps() {
+            let pps_measurement = PpsMeasurement {
+                measurementnoise: NtpDuration::from_seconds(0.001),
+                offset: NtpDuration::from_seconds(1.0),
+            };
+    
+            let measurement = Measurement {
+                delay: NtpDuration::from_seconds(0.001),
+                offset: NtpDuration::from_seconds(1.0),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
+                localtime: NtpTimestamp::default(),
+                monotime: NtpInstant::now(),
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+                gps: None,
+                pps: Some(pps_measurement),
+            };
+    
+            let mut initial_filter = InitialSourceFilter {
+                roundtriptime_stats: Default::default(),
+                init_offset: Default::default(),
+                last_measurement: None,
+                samples: 0,
+            };
+    
+            initial_filter.update(measurement);
+    
+            assert_eq!(initial_filter.samples, 1);
+            assert!(initial_filter.last_measurement.is_some());
+    
+            let last_measurement = initial_filter.last_measurement.unwrap();
+            assert!(last_measurement.pps.is_some());
+        }
+    
+        /// Tests that the SourceFilter absorbs a measurement correctly with PPS data.
+        #[test]
+        fn test_absorb_measurement_with_pps() {
+            let pps_measurement = PpsMeasurement {
+                measurementnoise: NtpDuration::from_seconds(0.001),
+                offset: NtpDuration::from_seconds(1.0),
+            };
+    
+            let measurement = Measurement {
+                delay: NtpDuration::from_seconds(0.001),
+                offset: NtpDuration::from_seconds(1.0),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
+                localtime: NtpTimestamp::default(),
+                monotime: NtpInstant::now(),
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+                gps: None,
+                pps: Some(pps_measurement),
+            };
+    
+            let mut source_filter = SourceFilter {
+                state: Vector::new_vector([0.0, 0.0]),
+                uncertainty: Matrix::new([[1.0, 0.0], [0.0, 1.0]]),
+                clock_wander: 1.0,
+                roundtriptime_stats: Default::default(),
+                precision_score: 0,
+                poll_score: 0,
+                desired_poll_interval: Default::default(),
+                last_measurement: measurement.clone(),
+                prev_was_outlier: false,
+                last_iter: NtpTimestamp::default(),
+                filter_time: NtpTimestamp::default(),
+            };
+    
+            let (p, weight, m_delta_t) = source_filter.absorb_measurement(measurement);
+    
+            assert!(p >= 0.0 && p <= 1.0);
+            assert!(weight >= 0.0 && weight <= 1.0);
+            assert!(m_delta_t >= 0.0);
+        }
+
+        #[test]    
+        fn test_initial_source_filter_update_with_gps_and_pps() {
+            let gps_measurement = GpsMeasurement {
+                measurementnoise: NtpDuration::from_seconds(0.001),
+                offset: NtpDuration::from_seconds(1.0),
+            };
+    
+            let pps_measurement = PpsMeasurement {
+                measurementnoise: NtpDuration::from_seconds(0.002),
+                offset: NtpDuration::from_seconds(2.0),
+            };
+    
+            let measurement = Measurement {
+                delay: NtpDuration::from_seconds(0.001),
+                offset: NtpDuration::from_seconds(1.0),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
+                localtime: NtpTimestamp::default(),
+                monotime: NtpInstant::now(),
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+                gps: Some(gps_measurement),
+                pps: Some(pps_measurement),
+            };
+    
+            let mut initial_filter = InitialSourceFilter {
+                roundtriptime_stats: Default::default(),
+                init_offset: Default::default(),
+                last_measurement: None,
+                samples: 0,
+            };
+    
+            initial_filter.update(measurement);
+    
+            assert_eq!(initial_filter.samples, 1);
+            assert!(initial_filter.last_measurement.is_some());
+    
+            let last_measurement = initial_filter.last_measurement.unwrap();
+            assert!(last_measurement.gps.is_some());
+            assert!(last_measurement.pps.is_some());
+        }
+    
+        /// Tests that the SourceFilter absorbs a measurement correctly with both GPS and PPS data.
+        #[test]
+        fn test_absorb_measurement_with_gps_and_pps() {
+            let gps_measurement = GpsMeasurement {
+                measurementnoise: NtpDuration::from_seconds(0.001),
+                offset: NtpDuration::from_seconds(1.0),
+            };
+    
+            let pps_measurement = PpsMeasurement {
+                measurementnoise: NtpDuration::from_seconds(0.002),
+                offset: NtpDuration::from_seconds(2.0),
+            };
+    
+            let measurement = Measurement {
+                delay: NtpDuration::from_seconds(0.001),
+                offset: NtpDuration::from_seconds(1.0),
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
+                localtime: NtpTimestamp::default(),
+                monotime: NtpInstant::now(),
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+                gps: Some(gps_measurement),
+                pps: Some(pps_measurement),
+            };
+    
+            let mut source_filter = SourceFilter {
+                state: Vector::new_vector([0.0, 0.0]),
+                uncertainty: Matrix::new([[1.0, 0.0], [0.0, 1.0]]),
+                clock_wander: 1.0,
+                roundtriptime_stats: Default::default(),
+                precision_score: 0,
+                poll_score: 0,
+                desired_poll_interval: Default::default(),
+                last_measurement: measurement.clone(),
+                prev_was_outlier: false,
+                last_iter: NtpTimestamp::default(),
+                filter_time: NtpTimestamp::default(),
+            };
+    
+            let (p, weight, m_delta_t) = source_filter.absorb_measurement(measurement);
+    
+            assert!(p >= 0.0 && p <= 1.0);
+            assert!(weight >= 0.0 && weight <= 1.0);
+            assert!(m_delta_t >= 0.0);
+        }
+    
+        /// Tests a measurement that has zero offset for both GPS and PPS.
+        #[test]
+        fn test_measurement_with_zero_offsets() {
+            let gps_measurement = GpsMeasurement {
+                measurementnoise: NtpDuration::ZERO,
+                offset: NtpDuration::ZERO,
+            };
+    
+            let pps_measurement = PpsMeasurement {
+                measurementnoise: NtpDuration::ZERO,
+                offset: NtpDuration::ZERO,
+            };
+    
+            let measurement = Measurement {
+                delay: NtpDuration::ZERO,
+                offset: NtpDuration::ZERO,
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
+                localtime: NtpTimestamp::default(),
+                monotime: NtpInstant::now(),
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+                gps: Some(gps_measurement),
+                pps: Some(pps_measurement),
+            };
+    
+            assert_eq!(measurement.delay, NtpDuration::ZERO);
+            assert_eq!(measurement.offset, NtpDuration::ZERO);
+            assert!(measurement.gps.is_some());
+            assert!(measurement.pps.is_some());
+        }
+    
+        /// Tests that the Measurement struct handles very large offsets correctly.
+        #[test]
+        fn test_measurement_with_large_offsets() {
+            let large_offset = NtpDuration::from_seconds(1_000_000.0);
+    
+            let gps_measurement = GpsMeasurement {
+                measurementnoise: large_offset,
+                offset: large_offset,
+            };
+    
+            let pps_measurement = PpsMeasurement {
+                measurementnoise: large_offset,
+                offset: large_offset,
+            };
+    
+            let measurement = Measurement {
+                delay: large_offset,
+                offset: large_offset,
+                transmit_timestamp: NtpTimestamp::default(),
+                receive_timestamp: NtpTimestamp::default(),
+                localtime: NtpTimestamp::default(),
+                monotime: NtpInstant::now(),
+                stratum: 0,
+                root_delay: NtpDuration::default(),
+                root_dispersion: NtpDuration::default(),
+                leap: NtpLeapIndicator::NoWarning,
+                precision: 0,
+                gps: Some(gps_measurement),
+                pps: Some(pps_measurement),
+            };
+    
+            assert_eq!(measurement.delay, large_offset);
+            assert_eq!(measurement.offset, large_offset);
+            assert!(measurement.gps.is_some());
+            assert!(measurement.pps.is_some());
+    
+            let gps = measurement.gps.unwrap();
+            assert_eq!(gps.measurementnoise, large_offset);
+            assert_eq!(gps.offset, large_offset);
+    
+            let pps = measurement.pps.unwrap();
+            assert_eq!(pps.measurementnoise, large_offset);
+            assert_eq!(pps.offset, large_offset);
+        }
+    
+        /// Tests that the InitialSourceFilter correctly handles zero samples.
+        #[test]
+        fn test_initial_source_filter_zero_samples() {
+            let initial_filter = InitialSourceFilter {
+                roundtriptime_stats: Default::default(),
+                init_offset: Default::default(),
+                last_measurement: None,
+                samples: 0,
+            };
+    
+            assert_eq!(initial_filter.samples, 0);
+            assert!(initial_filter.last_measurement.is_none());
+        }
+    
+        /// Tests that the SourceFilter handles zero measurements correctly.
+        #[test]
+        fn test_source_filter_zero_measurements() {
+            let source_filter = SourceFilter {
+                state: Vector::new_vector([0.0, 0.0]),
+                uncertainty: Matrix::new([[1.0, 0.0], [0.0, 1.0]]),
+                clock_wander: 1.0,
+                roundtriptime_stats: Default::default(),
+                precision_score: 0,
+                poll_score: 0,
+                desired_poll_interval: Default::default(),
+                last_measurement: Measurement {
+                    delay: NtpDuration::default(),
+                    offset: NtpDuration::default(),
+                    transmit_timestamp: NtpTimestamp::default(),
+                    receive_timestamp: NtpTimestamp::default(),
+                    localtime: NtpTimestamp::default(),
+                    monotime: NtpInstant::now(),
+                    stratum: 0,
+                    root_delay: NtpDuration::default(),
+                    root_dispersion: NtpDuration::default(),
+                    leap: NtpLeapIndicator::NoWarning,
+                    precision: 0,
+                    gps: None,
+                    pps: None,
+                },
+                prev_was_outlier: false,
+                last_iter: NtpTimestamp::default(),
+                filter_time: NtpTimestamp::default(),
+            };
+    
+            assert_eq!(source_filter.state.entry(0, 0), 0.0);
+            assert_eq!(source_filter.state.entry(1, 0), 0.0);
+            assert_eq!(source_filter.uncertainty.entry(0, 0), 1.0);
+            assert_eq!(source_filter.uncertainty.entry(1, 1), 1.0);
+            assert_eq!(source_filter.clock_wander, 1.0);
+        }
+
+    #[test]
+    fn test_measurement_from_gps() {
+        let offset = NtpDuration::from_seconds(1.0);
+        let local_clock_time = NtpInstant::now();
+        let timestamp = NtpTimestamp::from_fixed_int(0);
+        let measurement_noise = 0.1;
+
+        let measurement = Measurement::from_gps(
+            offset,
+            local_clock_time,
+            timestamp,
+            measurement_noise,
+        );
+
+        assert_eq!(measurement.offset, NtpDuration::from_seconds(0.0));
+        assert!(measurement.gps.is_some());
+        assert!(measurement.pps.is_none());
+
+        let gps_measurement = measurement.gps.unwrap();
+        assert_eq!(gps_measurement.offset, offset);
+        assert_eq!(gps_measurement.measurementnoise, NtpDuration::from_seconds(measurement_noise));
+    }
+
+    #[test]
+    fn test_measurement_from_pps() {
+        let offset = NtpDuration::from_seconds(1.0);
+        let local_clock_time = NtpInstant::now();
+        let ntp_timestamp = NtpTimestamp::from_fixed_int(0);
+        let measurement_noise = 0.1;
+
+        let measurement = Measurement::from_pps(
+            offset,
+            local_clock_time,
+            ntp_timestamp,
+            measurement_noise,
+        );
+
+        assert_eq!(measurement.offset, NtpDuration::from_seconds(0.0));
+        assert!(measurement.gps.is_none());
+        assert!(measurement.pps.is_some());
+
+        let pps_measurement = measurement.pps.unwrap();
+        assert_eq!(pps_measurement.offset, offset);
+        assert_eq!(pps_measurement.measurementnoise, NtpDuration::from_seconds(measurement_noise));
+    }
+} 
+    
