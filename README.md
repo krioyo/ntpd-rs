@@ -1,107 +1,93 @@
-![checks](https://github.com/pendulum-project/ntpd-rs/actions/workflows/checks.yaml/badge.svg?branch=main)
-[![codecov](https://codecov.io/gh/pendulum-project/ntpd-rs/branch/main/graph/badge.svg?token=WES1JIYUJH)](https://codecov.io/gh/pendulum-project/ntpd-rs)
-[![Crates.io](https://img.shields.io/crates/v/ntpd.svg)](https://crates.io/crates/ntpd)
-[![Docs](https://img.shields.io/badge/ntpd--rs-blue?label=docs)](https://docs.ntpd-rs.pendulum-project.org/)
-[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/8054/badge)](https://www.bestpractices.dev/projects/8054)
-[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/pendulum-project/ntpd-rs/badge)](https://securityscorecards.dev/viewer/?uri=github.com/pendulum-project/ntpd-rs)
+# Pulse Per Second and GPS input support for ntpd-rs
 
-# ntpd-rs
 
-nptd-rs is a tool for synchronizing your computer's clock, implementing the NTP and NTS protocols. It is written in Rust, with a focus on security and stability. It includes both client and server support.
 
-If a feature you need is missing please let us know by opening an issue.
+## Getting started
 
-## Documentation
+To make it easy for you to get started with GitLab, here's a list of recommended next steps.
 
-Be sure to check out the [documentation website] as it includes guides on getting started, installation and migration, as well as a high-level overview of the code structure.
+Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+
+## Add your files
+
+- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
+- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
+
+```
+cd existing_repo
+git remote add origin https://gitlab.ewi.tudelft.nl/cse2000-software-project/2023-2024/cluster-k/09a/pulse-per-second-and-gps-input-support-for-ntpd-rs.git
+git branch -M main
+git push -uf origin main
+```
+
+## Integrate with your tools
+
+- [ ] [Set up project integrations](https://gitlab.ewi.tudelft.nl/cse2000-software-project/2023-2024/cluster-k/09a/pulse-per-second-and-gps-input-support-for-ntpd-rs/-/settings/integrations)
+
+## Collaborate with your team
+
+- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
+- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
+- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
+- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
+- [ ] [Set auto-merge](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+
+## Test and Deploy
+
+Use the built-in continuous integration in GitLab.
+
+- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
+- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
+- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
+- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
+- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+
+***
+
+# Editing this README
+
+When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+
+## Suggestions for a good README
+
+Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+
+## Name
+Choose a self-explaining name for your project.
+
+## Description
+Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+
+## Badges
+On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+
+## Visuals
+Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+
+## Installation
+Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
 
 ## Usage
+Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
 
-You can install the packages from the [releases page]. These packages configure ntpd-rs to synchronize your computers clock to servers from the [NTP pool]. After installation, check the status of the ntpd-rs daemon with
-
-```console
-$ sudo systemctl status ntpd-rs
-```
-
-If ntpd-rs was not started automatically, you can do so now with
-
-```console
-$ sudo systemctl start ntpd-rs
-```
-
-You should now be able to check the synchronization status with
-
-```console
-$ ntp-ctl status
-Synchronization status:
-Dispersion: 0.000299s, Delay: 0.007637s
-Desired poll interval: 16s
-Stratum: 4
-
-Sources:
-ntpd-rs.pool.ntp.org:123/77.171.247.180:123 (1): +0.000024±0.000137(±0.016886)s
-    poll interval: 16s, missing polls: 0
-    root dispersion: 0.005905s, root delay:0.016190s
-ntpd-rs.pool.ntp.org:123/45.137.101.154:123 (2): +0.000022±0.000081(±0.007414)s
-    poll interval: 16s, missing polls: 0
-    root dispersion: 0.004517s, root delay:0.005051s
-ntpd-rs.pool.ntp.org:123/178.215.228.24:123 (3): +0.000117±0.000091(±0.009162)s
-    poll interval: 16s, missing polls: 0
-    root dispersion: 0.000549s, root delay:0.004318s
-ntpd-rs.pool.ntp.org:123/162.159.200.123:123 (4): +0.000111±0.000076(±0.004066)s
-    poll interval: 16s, missing polls: 0
-    root dispersion: 0.000351s, root delay:0.003571s
-
-Servers:
-```
-The top part shows the overal quality of the time synchronization, and the time sources section shows which servers are used as well as offsets and uncertainties of those individual servers.
-
-For more details on how to install and use ntpd-rs, see our [documentation website].
+## Support
+Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
 
 ## Roadmap
+If you have ideas for releases in the future, it is a good idea to list them in the README.
 
-In Q1 2023 we completed our work on NTS. Our implementation is now
-full-featured, it supports NTP client and server with NTS.
+## Contributing
+State if you are open to contributions and what your requirements are for accepting them.
 
-Our roadmap for 2024:
+For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
 
-* Q2-Q4 2024: Packaging and industry adoption, maintenance & community work
-* Q4 2024: NTS Pool (pending funding)
+You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
 
-We seek sponsorship for features and maintenance to continue our work. Contact
-us via pendulum@tweedegolf.com if you are interested!
+## Authors and acknowledgment
+Show your appreciation to those who have contributed to the project.
 
-## History
+## License
+For open source projects, say how it is licensed.
 
-### 2022
-
-The project originates from ISRG's project [Prossimo], as part of their mission
-to achieve memory safety for the Internet's most critical infrastructure.
-
-<img alt="Prossimo" src="https://www.memorysafety.org/images/Prossimo%20Brand%20Assets/Prossimo%20Horizontal%20Full%20Color.svg" width="250px"/>
-
-Prossimo funded the initial development of the NTP client and server, and NTS
-support. The [NTP initiative page] on Prossimo's website tells the story.
-
-### 2023
-
-After completion of the initial development, the project's ownership moved from
-Prossimo to Tweede golf in April 2023. See the [NTP announcement] for more
-information.
-
-Tweede golf is the long-term maintainer of ntpd-rs, that is now part of Tweede
-golf's [Project Pendulum]. Pendulum is building modern, open-source
-implementations of the Network Time Protocol (ntpd-rs) and the Precision Time Protocol (Statime).
-
-In July of 2023 the [Sovereign Tech Fund] invested in Pendulum, securing ntpd-rs development and maintenance in 2023, and maintenance and adoption work in 2024.
-
-![STF](https://tweedegolf.nl/images/logo-stf-blank.png)
-
-[releases page]: https://github.com/pendulum-project/ntpd-rs/releases
-[NTP pool]: https://www.ntppool.org
-[documentation website]: https://docs.ntpd-rs.pendulum-project.org/
-[Prossimo]: https://www.memorysafety.org
-[NTP initiative page]: https://www.memorysafety.org/initiative/ntp
-[NTP announcement]: https://www.memorysafety.org/blog/ntp-and-nts-have-arrived/
-[Project Pendulum]: https://github.com/pendulum-project
-[Sovereign Tech Fund]: https://sovereigntechfund.de/en/
+## Project status
+If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
