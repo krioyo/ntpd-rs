@@ -1,0 +1,7 @@
+[[source]]
+mode = "server"
+address = "example.com"
+
+[synchronization]
+does-not-exist = 5
+minimum-agreeing-sources = 2

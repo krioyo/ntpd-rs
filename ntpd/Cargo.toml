@@ -1,0 +1,113 @@
+[package]
+name = "ntpd"
+readme = "README.md"
+description.workspace = true
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+build = "build.rs"
+
+[dependencies]
+ntp-proto.workspace = true
+
+tokio = { workspace = true, features = ["rt-multi-thread", "io-util", "io-std", "fs", "sync", "net", "macros"] }
+tracing.workspace = true
+tracing-subscriber.workspace = true
+toml.workspace = true
+rand.workspace = true
+libc.workspace = true
+async-trait.workspace = true
+timestamped-socket.workspace = true
+clock-steering.workspace = true
+
+serde.workspace = true
+serde_json.workspace = true
+
+rustls.workspace = true
+rustls-native-certs.workspace = true
+rustls-pemfile.workspace = true
+
+[dev-dependencies]
+ntp-proto = { workspace = true, features = ["__internal-test",] }
+tokio-rustls.workspace = true
+
+[features]
+default = []
+hardware-timestamping = []
+unstable_ntpv5 = ["ntp-proto/ntpv5"]
+unstable_nts-pool = [ "ntp-proto/nts-pool" ]
+
+[lib]
+name = "ntpd"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ntp-daemon"
+path = "bin/ntp-daemon.rs"
+
+[[bin]]
+name = "ntp-ctl"
+path = "bin/ntp-ctl.rs"
+
+[[bin]]
+name = "ntp-metrics-exporter"
+path = "bin/ntp-metrics-exporter.rs"
+
+[package.metadata.deb]
+name = "ntpd-rs"
+priority = "optional"
+section = "net"
+copyright = "Copyright (c) 2022-2023 Tweede Golf and Contributors"
+license-file = "../pkg/deb/COPYRIGHT-debian"
+maintainer = "NTPD-rs Maintainers <ntpd-rs-maintainer@tweedegolf.com>"
+maintainer-scripts = "../pkg/deb/"
+assets = [
+  ["target/release/ntp-daemon", "/usr/bin/ntp-daemon", "755"],
+  ["target/release/ntp-ctl", "/usr/bin/ntp-ctl", "755"],
+  ["target/release/ntp-metrics-exporter", "/usr/bin/ntp-metrics-exporter", "755"],
+  ["docs/precompiled/man/ntp-ctl.8", "/usr/share/man/man8/ntp-ctl.8", "644"],
+  ["docs/precompiled/man/ntp-daemon.8", "/usr/share/man/man8/ntp-daemon.8", "644"],
+  ["docs/precompiled/man/ntp-metrics-exporter.8", "/usr/share/man/man8/ntp-metrics-exporter.8", "644"],
+  ["docs/precompiled/man/ntp.toml.5", "/usr/share/man/man5/ntp.toml.5", "644"],
+  ["docs/examples/conf/ntp.toml.default", "/usr/share/doc/ntpd-rs/ntp.toml.default", "644"],
+  ["docs/examples/conf/ntp.toml.default", "/etc/ntpd-rs/ntp.toml", "644"],
+  ["docs/examples/conf/ntpd-rs.preset", "/lib/systemd/system-preset/50-ntpd-rs.preset", "644"],
+  ["docs/examples/conf/ntpd-rs.service", "/lib/systemd/system/ntpd-rs.service", "644"],
+  ["docs/examples/conf/ntpd-rs-metrics.service", "/lib/systemd/system/ntpd-rs-metrics.service", "644"],
+  ["../COPYRIGHT", "/usr/share/doc/ntpd-rs/COPYRIGHT", "644"],
+  ["../LICENSE-APACHE", "/usr/share/doc/ntpd-rs/LICENSE-APACHE", "644"],
+  ["../LICENSE-MIT", "/usr/share/doc/ntpd-rs/LICENSE-MIT", "644"],
+  ["../CHANGELOG.md", "/usr/share/doc/ntpd-rs/CHANGELOG.md", "644"],
+  ["../README.md", "/usr/share/doc/ntpd-rs/README.md", "644"],
+]
+conf-files = [
+  "/etc/ntpd-rs/ntp.toml",
+]
+
+[package.metadata.generate-rpm]
+name = "ntpd-rs"
+# See: https://fedoraproject.org/wiki/Licensing:Main?rd=Licensing#Good_Licenses
+license = "MIT or ASL 2.0"
+assets = [
+  { source = "target/release/ntp-daemon", dest = "/usr/bin/ntp-daemon", mode = "755" },
+  { source = "target/release/ntp-ctl", dest = "/usr/bin/ntp-ctl", mode = "755" },
+  { source = "target/release/ntp-metrics-exporter", dest = "/usr/bin/ntp-metrics-exporter", mode = "755" },
+  { source = "docs/precompiled/man/ntp-ctl.8", dest = "/usr/share/man/man8/ntp-ctl.8", mode = "644", doc = true },
+  { source = "docs/precompiled/man/ntp-daemon.8", dest = "/usr/share/man/man8/ntp-daemon.8", mode = "644", doc = true },
+  { source = "docs/precompiled/man/ntp-metrics-exporter.8", dest = "/usr/share/man/man8/ntp-metrics-exporter.8", mode = "644", doc = true },
+  { source = "docs/precompiled/man/ntp.toml.5", dest = "/usr/share/man/man5/ntp-toml.5", mode = "644", doc = true },
+  { source = "docs/examples/conf/ntp.toml.default", dest = "/usr/share/doc/ntpd-rs/ntp.toml.default", mode = "644", doc = true },
+  { source = "docs/examples/conf/ntp.toml.default", dest = "/etc/ntpd-rs/ntp.toml", mode = "644", config = true },
+  { source = "docs/examples/conf/ntpd-rs.service", dest = "/lib/systemd/system/ntpd-rs.service", mode = "644" },
+  { source = "docs/examples/conf/ntpd-rs-metrics.service", dest = "/lib/systemd/system/ntpd-rs-metrics.service", mode = "644" },
+  { source = "docs/examples/conf/ntpd-rs.preset", dest = "/lib/systemd/system-preset/50-ntpd-rs.preset", mode = "644" },
+  { source = "../COPYRIGHT", dest = "/usr/share/doc/ntpd-rs/COPYRIGHT", mode = "644", doc = true },
+  { source = "../LICENSE-APACHE", dest = "/usr/share/doc/ntpd-rs/LICENSE-APACHE", mode = "644", doc = true },
+  { source = "../LICENSE-MIT", dest = "/usr/share/doc/ntpd-rs/LICENSE-MIT", mode = "644", doc = true },
+  { source = "../CHANGELOG.md", dest = "/usr/share/doc/ntpd-rs/CHANGELOG.md", mode = "644", doc = true },
+  { source = "../README.md", dest = "/usr/share/doc/ntpd-rs/README.md", mode = "644", doc = true },
+]

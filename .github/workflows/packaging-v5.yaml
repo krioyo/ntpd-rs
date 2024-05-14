@@ -1,0 +1,51 @@
+name: packaging ntpv5
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - 'release/**'
+  workflow_dispatch:
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target:
+          - aarch64-unknown-linux-gnu
+          - armv7-unknown-linux-gnueabihf
+          - x86_64-unknown-linux-gnu
+          - i686-unknown-linux-gnu
+    steps:
+      - name: Setup packaging tools for cross compiled artifacts
+        uses: awalsh128/cache-apt-pkgs-action@a6c3917cc929dd0345bfb2d3feaf9101823370ad # v1.4.2
+        with:
+          packages: qemu-user-static crossbuild-essential-armhf crossbuild-essential-arm64 crossbuild-essential-i386
+          version: 1
+
+      - name: Install toolchain
+        uses: dtolnay/rust-toolchain@d8352f6b1d2e870bc5716e7a6d9b65c4cc244a1a
+        with:
+          toolchain: "stable"
+          components: "llvm-tools"
+
+      - name: Install cross, cargo-deb and cargo-generate-rpm
+        uses: taiki-e/install-action@040f0ebba5461501fd9919d75244fd045c3774b3
+        with:
+          tool: cross, cargo-deb, cargo-generate-rpm
+
+      - name: Checkout sources
+        uses: actions/checkout@0ad4b8fadaa221de15dcec353f45205ec38ea70b
+
+      - name: Build the release binaries
+        run: RELEASE_TARGETS="${{ matrix.target }}" RELEASE_FEATURES="unstable_ntpv5" utils/build-release.sh
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@65462800fd760344b1a7b4382951275a0abb4808 # v4.3.3
+        with:
+          name: release-binaries-${{ matrix.target }}
+          path: target/pkg/
+          if-no-files-found: error

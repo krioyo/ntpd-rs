@@ -1,0 +1,19 @@
+[observability]
+# Other values include trace, debug, warn and error
+log-level = "info"
+
+# the server will get its time from the NTP pool
+[[source]]
+mode = "pool"
+address = "pool.ntp.org"
+count = 4
+
+[[server]]
+listen = "0.0.0.0:123"
+
+# to function as an NTS server, we must also provide key exchange
+[[nts-ke-server]]
+listen = "0.0.0.0:4460"
+certificate-chain-path = "path/to/certificate/chain.pem"
+private-key-path = "path/to/private.key"
+key-exchange-timeout-ms = 1000

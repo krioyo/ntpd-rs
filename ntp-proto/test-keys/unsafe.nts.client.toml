@@ -1,0 +1,16 @@
+[observability]
+# Other values include trace, debug, warn and error
+log-level = "info"
+observation-path = "/var/run/ntpd-rs/observe"
+
+# uses an unsecure certificate!
+[[source]]
+mode = "nts"
+address = "localhost:4460"
+certificate-authority = "ntp-proto/test-keys/testca.pem"
+
+# System parameters used in filtering and steering the clock:
+[synchronization]
+minimum-agreeing-sources = 1
+single-step-panic-threshold = 10
+startup-step-panic-threshold = { forward = "inf", backward = 86400 }

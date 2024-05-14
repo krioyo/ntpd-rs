@@ -1,0 +1,73 @@
+#!/bin/sh
+
+set -e
+
+NTPDRS_CONF_SRC="/usr/share/doc/ntpd-rs/ntp.toml.default"
+NTPDRS_CONF_DIR="/etc/ntpd-rs"
+NTPDRS_CONF="${NTPDRS_CONF_DIR}/ntp.toml"
+NTPDRS_CONF_PERMS=644
+NTPDRS_HOME="/var/lib/ntpd-rs/"
+NTPDRS_USER="ntpd-rs"
+NTPDRS_OBSERVE_HOME="/var/lib/ntpd-rs-observe/"
+NTPDRS_OBSERVE_USER="ntpd-rs-observe"
+
+create_user() {
+    if ! id ${NTPDRS_USER} > /dev/null 2>&1; then
+        adduser --system --home "${NTPDRS_HOME}" --group ${NTPDRS_USER}
+    fi
+    if ! id ${NTPDRS_OBSERVE_USER} > /dev/null 2>&1; then
+        adduser --system --home "${NTPDRS_OBSERVE_HOME}" --group ${NTPDRS_OBSERVE_USER}
+    fi
+}
+
+case "$1" in
+configure)
+    create_user
+    ;;
+esac
+
+if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-deconfigure" ] || [ "$1" = "abort-remove" ] ; then
+    # This will only remove masks created by d-s-h on package removal.
+    deb-systemd-helper unmask ntpd-rs.service >/dev/null || true
+
+    # was-enabled defaults to true, so new installations run enable.
+    if deb-systemd-helper --quiet was-enabled ntpd-rs.service; then
+        # Enables the unit on first installation, creates new
+        # symlinks on upgrades if the unit file has changed.
+        deb-systemd-helper enable ntpd-rs.service >/dev/null || true
+    else
+        # Update the statefile to add new symlinks (if any), which need to be
+        # cleaned up on purge. Also remove old symlinks.
+        deb-systemd-helper update-state ntpd-rs.service >/dev/null || true
+    fi
+fi
+
+if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-deconfigure" ] || [ "$1" = "abort-remove" ] ; then
+    if deb-systemd-helper debian-installed ntpd-rs-metrics.service; then
+        # This will only remove masks created by d-s-h on package removal.
+        deb-systemd-helper unmask ntpd-rs-metrics.service >/dev/null || true
+
+        if deb-systemd-helper --quiet was-enabled ntpd-rs-metrics.service; then
+            # Create new symlinks, if any.
+            deb-systemd-helper enable ntpd-rs-metrics.service >/dev/null || true
+        fi
+    fi
+
+    # Update the statefile to add new symlinks (if any), which need to be cleaned
+    # up on purge. Also remove old symlinks.
+    deb-systemd-helper update-state ntpd-rs-metrics.service >/dev/null || true
+fi
+
+if [ "$1" = "configure" ] || [ "$1" = "abort-upgrade" ] || [ "$1" = "abort-deconfigure" ] || [ "$1" = "abort-remove" ] ; then
+	if [ -d /run/systemd/system ]; then
+		systemctl --system daemon-reload >/dev/null || true
+		if [ -n "$2" ]; then
+			_dh_action=restart
+		else
+			_dh_action=start
+		fi
+		deb-systemd-invoke $_dh_action ntpd-rs.service ntpd-rs-metrics.service >/dev/null || true
+	fi
+fi
+
+#DEBHELPER#

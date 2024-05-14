@@ -1,0 +1,51 @@
+theme:
+  name: material
+  features:
+    - content.tooltips
+    - content.code.copy
+    - content.code.select
+    - navigation.sections
+docs_dir: docs
+site_name: ntpd-rs documentation
+site_dir: target/docs/site
+exclude_docs: |
+  /precompiled  # Precompiled assets
+  /includes     # Only included indirectly
+markdown_extensions:
+  - def_list
+  - abbr
+  - attr_list
+  - admonition
+  - pymdownx.snippets:
+      auto_append: [./docs/includes/glossary.md]
+  - pymdownx.escapeall:
+      hardbreak: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.details
+  - pymdownx.superfences
+nav:
+  - Home: index.md
+  - Guide:
+    - guide/getting-started.md
+    - guide/installation.md
+    - guide/server-setup.md
+    - guide/exporting-metrics.md
+    - guide/nts.md
+    - guide/migrating-chrony.md
+    - guide/migrating-ntpd.md
+    - guide/migrating-ntpsec.md
+    - guide/security-guidance.md
+  - Man Pages:
+    - ntp-daemon(8): man/ntp-daemon.8.md
+    - ntp.toml(5): man/ntp.toml.5.md
+    - ntp-ctl(8): man/ntp-ctl.8.md
+    - ntp-metrics-exporter(8): man/ntp-metrics-exporter.8.md
+  - Development:
+    - development/code-structure.md
+    - development/threat-model.md
+    - development/ca.md
+    - development/audits.md
