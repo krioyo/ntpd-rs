@@ -22,9 +22,9 @@ use super::{ObservableSourceTimedata, StateUpdate, TimeSyncController};
 
 mod combiner;
 pub(super) mod config;
-mod matrix;
+pub mod matrix;
 mod select;
-mod source;
+pub mod source;
 
 fn sqr(x: f64) -> f64 {
     x * x
@@ -486,6 +486,7 @@ mod tests {
                     root_dispersion: NtpDuration::default(),
                     leap: NtpLeapIndicator::NoWarning,
                     precision: 0,
+                    gps: None,
                 },
             );
         }
@@ -605,6 +606,7 @@ mod tests {
                     root_dispersion: NtpDuration::default(),
                     leap: NtpLeapIndicator::NoWarning,
                     precision: 0,
+                    gps: None,
                 },
             );
         }
@@ -662,6 +664,7 @@ mod tests {
                     root_dispersion: NtpDuration::default(),
                     leap: NtpLeapIndicator::NoWarning,
                     precision: 0,
+                    gps: None,
                 },
             );
         }
