@@ -7,7 +7,7 @@ use ntp_proto::{
      GpsSourceActionIterator, GpsSource
 };
 
-use tracing::{debug, error, info, instrument, warn, Instrument, Span};
+use tracing::{debug, error, instrument, warn, Instrument, Span};
 use chrono::DateTime;
 
 use crate::daemon::ntp_source::MsgForSystem;
@@ -49,20 +49,16 @@ where
     T: Wait,
 {
     async fn run(&mut self, mut poll_wait: Pin<&mut T>) {
-        // info!("running gps source task:");
         loop {
             enum SelectResult {
                 Timer,
                 Recv(Result<GPSData, GPSError>),
             }
-            // info!("get gps result:"); 
             let selected = tokio::select! {
                 () = &mut poll_wait => {
                     SelectResult::Timer
                 },
                 result = async{self.gps.current_data()} => SelectResult::Recv(result)
-               
-               
             };
 
             let actions = match selected {
@@ -71,7 +67,6 @@ where
             
                     match accept_gps_time::<>(result) {
                         AcceptResult::Accept(recv_timestamp) => {
-                            //info!("gps time has result");
                             let send_timestamp = match self.last_send_timestamp {
                                 Some(ts) => ts,
                                 None => {
@@ -100,11 +95,9 @@ where
                 }
             };
             
-            // info!("retrieved actions");
             for action in actions {
                 match action {
                     ntp_proto::GpsSourceAction::Send() => {
-                        //info!("some timer things")
                         match self.clock.now() {
                             Err(e) => {
                                 // we cannot determine the origin_timestamp
@@ -120,7 +113,6 @@ where
 
                     }
                     ntp_proto::GpsSourceAction::UpdateSystem(update) => {
-                        //info!("update source action")
                         self.channels
                             .msg_for_system_sender
                             .send(MsgForSystem::GpsSourceUpdate(self.index, update))
@@ -165,7 +157,6 @@ where
         channels: SourceChannels,
         gps: GPS,
     ) -> tokio::task::JoinHandle<()> {
-        info!("spawning gps source?");
         tokio::spawn(
             (async move {
                
