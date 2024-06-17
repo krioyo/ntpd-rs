@@ -6,7 +6,7 @@ use ntp_proto::{
     GpsSource, GpsSourceActionIterator, NtpClock, NtpDuration, NtpInstant, NtpTimestamp
 };
 
-use tracing::{error, info, instrument, warn, Instrument, Span};
+use tracing::{error, instrument, warn, Instrument, Span};
 
 use crate::daemon::ntp_source::MsgForSystem;
 
