@@ -49,7 +49,6 @@ where
     T: Wait,
 {
     async fn run(&mut self, mut poll_wait: Pin<&mut T>) {
-        // info!("running gps source task:");
         loop {
             enum SelectResult {
                 Timer,
@@ -142,11 +141,9 @@ where
                 }
             };
             
-            // info!("retrieved actions");
             for action in actions {
                 match action {
                     ntp_proto::GpsSourceAction::Send() => {
-                        //info!("some timer things")
                         match self.clock.now() {
                             Err(e) => {
                                 // we cannot determine the origin_timestamp
@@ -162,7 +159,6 @@ where
 
                     }
                     ntp_proto::GpsSourceAction::UpdateSystem(update) => {
-                        //info!("update source action")
                         self.channels
                             .msg_for_system_sender
                             .send(MsgForSystem::GpsSourceUpdate(self.index, update))
@@ -207,7 +203,6 @@ where
         channels: SourceChannels,
         gps: Gps,
     ) -> tokio::task::JoinHandle<()> {
-        info!("spawning gps source?");
         tokio::spawn(
             (async move {
                

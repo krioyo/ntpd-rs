@@ -104,10 +104,10 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 next_update: None,
             };
         }
+        
         for (_, (state, _)) in self.sources.iter_mut() {
             state.progress_filtertime(time);
         }
-
         let selection = select::select(
             &self.synchronization_config,
             &self.algo_config,
@@ -122,7 +122,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 })
                 .collect(),
         );
-
+        println!("selection lenght: {}", selection.len());
         if let Some(combined) = combine(&selection, &self.algo_config) {
             info!(
                 "Offset: {}+-{}ms, frequency: {}+-{}ppm",
