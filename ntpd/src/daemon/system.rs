@@ -19,7 +19,7 @@ use std::{
 };
 
 use ntp_proto::{
-    KeySet, NtpClock, SourceDefaultsConfig, SynchronizationConfig, System, SystemSnapshot,
+    KeySet, NtpClock, SourceDefaultsConfig, SynchronizationConfig, System, SystemSnapshot
 };
 use timestamped_socket::interface::InterfaceName;
 use tokio::{sync::mpsc, task::JoinHandle};
@@ -352,6 +352,12 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
             }
             MsgForSystem::GpsSourceUpdate(index, update) => {
                 match self.system.handle_gps_source_update(index, update) {
+                    Err(e) => unreachable!("Could not process source measurement: {}", e),
+                    Ok(timer) => self.handle_state_update(timer, wait),
+                }
+            }
+            MsgForSystem::PpsSourceUpdate(index, update) => {
+                match self.system.handle_pps_source_update(index, update) {
                     Err(e) => unreachable!("Could not process source measurement: {}", e),
                     Ok(timer) => self.handle_state_update(timer, wait),
                 }
@@ -755,6 +761,7 @@ mod tests {
                             leap: NtpLeapIndicator::NoWarning,
                             precision: 0,
                             gps: None, 
+                            pps: None, 
                         },
                     ),
                 ),
@@ -794,6 +801,7 @@ mod tests {
                             leap: NtpLeapIndicator::NoWarning,
                             precision: 0,
                             gps: None,
+                            pps: None,
                         },
                     ),
                 ),
