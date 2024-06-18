@@ -104,6 +104,10 @@ pub async fn spawn(
         tracing::error!("Could not spawn gps source: {}", e);
         std::io::Error::new(std::io::ErrorKind::Other, e)
     })?;
+    system.add_spawner(PpsSpawner::new()).map_err(|e| {
+        tracing::error!("Could not spawn pps source: {}", e);
+        std::io::Error::new(std::io::ErrorKind::Other, e)
+    })?;
 
 
     for source_config in source_configs {
@@ -540,9 +544,8 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         self.system.handle_source_create(source_id)?;
     
         info!("creating pps instance:");
-        let port_name = "/dev/pps0";
-        let timeout = Duration::from_secs(10);
-        let pps: Pps = Pps::new(port_name).unwrap();
+        let pps_path = "/dev/pps0"; // Replace with the actual path to your PPS device
+        let pps: Pps = Pps::new(pps_path).unwrap();
         
         info!("creating pps source task:");
         PpsSourceTask::spawn(
