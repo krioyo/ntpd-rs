@@ -76,7 +76,7 @@ where
                             match accept_gps_time::<>(result) {
                                             AcceptResult::Accept((offset, timestamp)) => {
                                                 println!("offset: {:?}", offset);
-                                                self.source.handle_incoming(NtpInstant::now(),offset,timestamp)
+                                                self.source.handle_incoming(NtpInstant::now(),offset, timestamp, self.gps.measurement_noise) 
                                             }
                                             AcceptResult::Ignore => GpsSourceActionIterator::default(),
 

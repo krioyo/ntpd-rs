@@ -101,6 +101,7 @@ pub async fn spawn(
         ip_list,
         -1,
     );
+
     system.add_spawner(GpsSpawner::new()).map_err(|e| {
         tracing::error!("Could not spawn gps source: {}", e);
         std::io::Error::new(std::io::ErrorKind::Other, e)
@@ -116,8 +117,18 @@ pub async fn spawn(
     println!("PPS SOURCE INDEX IN DAEMON {:?}", system.pps_source_id);
 
 
+    
+
     for source_config in source_configs {
         match source_config {
+            NtpSourceConfig::Gps(cfg) => {
+                println!("spawning gps");
+                system.add_spawner(GpsSpawner::new(cfg.clone())).map_err(|e| {
+                    tracing::error!("Could not spawn gps source: {}", e);
+                    std::io::Error::new(std::io::ErrorKind::Other, e)
+                })?;
+            
+            }
             NtpSourceConfig::Standard(cfg) => {
                 system
                     .add_spawner(StandardSpawner::new(cfg.clone()))
@@ -515,10 +526,11 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         self.system.handle_source_create(source_id)?;
 
         info!("creating gps instance:");
-        let port_name = "/dev/serial0";
-        let baud_rate = 9600;
+        let port_name = &params.addr;
+        let measurement_noise = params.measurement_noise;
+        let baud_rate = params.baud_rate;
         let timeout = Duration::from_secs(10);
-        let gps: Gps = Gps::new(port_name, baud_rate, timeout).unwrap();
+        let gps: Gps = Gps::new(port_name, baud_rate, timeout, measurement_noise).unwrap();
         
         info!("creating gps source task:");
         GpsSourceTask::spawn(
