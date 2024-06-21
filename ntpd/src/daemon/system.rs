@@ -99,25 +99,26 @@ pub async fn spawn(
         source_defaults_config,
         keyset,
         ip_list,
-        -1,
     );
-    system.add_spawner(GpsSpawner::new()).map_err(|e| {
-        tracing::error!("Could not spawn gps source: {}", e);
-        std::io::Error::new(std::io::ErrorKind::Other, e)
-    })?;
-    system.add_spawner(PpsSpawner::new()).map_err(|e| {
-        tracing::error!("Could not spawn pps source: {}", e);
-        std::io::Error::new(std::io::ErrorKind::Other, e)
-    })?;
-
-    // // Update the pps_source_id in system
-    // system.update_pps_source_id(pps_source_id);
-
-    println!("PPS SOURCE INDEX IN DAEMON {:?}", system.pps_source_id);
 
 
     for source_config in source_configs {
         match source_config {
+            NtpSourceConfig::Gps(cfg) => {
+                println!("spawning gps");
+                system.add_spawner(GpsSpawner::new(cfg.clone())).map_err(|e| {
+                    tracing::error!("Could not spawn gps source: {}", e);
+                    std::io::Error::new(std::io::ErrorKind::Other, e)
+                })?;
+            
+            }
+            NtpSourceConfig::Pps(cfg) =>{
+                println!("spawning pps");
+                system.add_spawner(PpsSpawner::new(cfg.clone())).map_err(|e| {
+                    tracing::error!("Could not spawn pps source: {}", e);
+                    std::io::Error::new(std::io::ErrorKind::Other, e)
+                })?;
+            }
             NtpSourceConfig::Standard(cfg) => {
                 system
                     .add_spawner(StandardSpawner::new(cfg.clone()))
@@ -192,7 +193,6 @@ struct SystemTask<C: NtpClock, T: Wait> {
     source_channels: SourceChannels,
     timestamp_mode: TimestampMode,
     interface: Option<InterfaceName>,
-    pps_source_id: i32,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -205,7 +205,6 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         source_defaults_config: SourceDefaultsConfig,
         keyset: tokio::sync::watch::Receiver<Arc<KeySet>>,
         ip_list: tokio::sync::watch::Receiver<Arc<[IpAddr]>>,
-        pps_source_id: i32,
     ) -> (Self, DaemonChannels) {
         let system = System::new(
             clock.clone(),
@@ -248,7 +247,6 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
                 },
                 timestamp_mode,
                 interface,
-                pps_source_id,
             },
             DaemonChannels {
                 source_snapshots_receiver,
@@ -515,10 +513,11 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
         self.system.handle_source_create(source_id)?;
 
         info!("creating gps instance:");
-        let port_name = "/dev/serial0";
-        let baud_rate = 9600;
+        let port_name = &params.addr;
+        let measurement_noise = params.measurement_noise;
+        let baud_rate = params.baud_rate;
         let timeout = Duration::from_secs(10);
-        let gps: Gps = Gps::new(port_name, baud_rate, timeout).unwrap();
+        let gps: Gps = Gps::new(port_name, baud_rate, timeout, measurement_noise).unwrap();
         
         info!("creating gps source task:");
         GpsSourceTask::spawn(
@@ -560,7 +559,10 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
     
         info!("creating pps instance:");
         //let pps_path = "/dev/pps0"; // Replace with the actual path to your PPS device
-        let pps: Pps = Pps::new().unwrap();
+        info!("creating gps instance:");
+        let port_name = &params.addr;
+        let measurement_noise = params.measurement_noise;
+        let pps: Pps = Pps::new(port_name.to_string(), measurement_noise).unwrap();
         
         info!("creating pps source task:");
         PpsSourceTask::spawn(
@@ -716,7 +718,6 @@ mod tests {
             SourceDefaultsConfig::default(),
             keyset,
             ip_list,
-            -1
         );
         let wait =
             SingleshotSleep::new_disabled(tokio::time::sleep(std::time::Duration::from_secs(0)));

@@ -16,6 +16,18 @@ listen = "0.0.0.0:123"
 filter = []
 action = "deny"
 
+[[source]]
+mode = "Gps"
+address = "/dev/serial0"
+measurement_noise = 0.001
+baud_rate = 9600
+
+[[source]]
+mode = "Pps"
+address = "/dev/pps0"
+measurement_noise = 0.001
+
+
 # configure the client with
 # [[source]]
 # mode = "server"

@@ -423,6 +423,8 @@ impl Config {
                 NtpSourceConfig::Standard(_) => count += 1,
                 NtpSourceConfig::Nts(_) => count += 1,
                 NtpSourceConfig::Pool(config) => count += config.count,
+                NtpSourceConfig::Gps(_) => count += 1,
+                NtpSourceConfig::Pps(_) => count += 1,
                 #[cfg(feature = "unstable_nts-pool")]
                 NtpSourceConfig::NtsPool(config) => count += config.count,
             }
