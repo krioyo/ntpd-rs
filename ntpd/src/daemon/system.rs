@@ -110,8 +110,8 @@ pub async fn spawn(
         std::io::Error::new(std::io::ErrorKind::Other, e)
     })?.as_i32();
 
-    // Update the pps_source_id in system
-    system.update_pps_source_id(pps_source_id);
+    // // Update the pps_source_id in system
+    // system.update_pps_source_id(pps_source_id);
 
     println!("PPS SOURCE INDEX IN DAEMON {:?}", system.pps_source_id);
 
@@ -213,7 +213,6 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
             synchronization_config.clone(),
             source_defaults_config.clone(),
             ip_list.borrow().clone(),
-            pps_source_id,
         );
 
         // Create communication channels
@@ -262,17 +261,15 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
     }
 
 
-    // Method to update pps_source_id and reinitialize system
-    fn update_pps_source_id(&mut self, pps_source_id: i32) {
-        self.pps_source_id = pps_source_id;
-        self.system = System::new(
-            self.clock.clone(),
-            self.synchronization_config.clone(),
-            self.source_defaults_config.clone(),
-            self.ip_list.borrow().clone(),
-            pps_source_id,
-        );
-    }
+    // // Method to update pps_source_id and reinitialize system
+    // fn update_pps_source_id(&mut self, pps_source_id: i32) {
+    //     self.system = System::new(
+    //         self.clock.clone(),
+    //         self.synchronization_config.clone(),
+    //         self.source_defaults_config.clone(),
+    //         self.ip_list.borrow().clone(),
+    //     );
+    // }
 
     fn add_spawner(
         &mut self,
