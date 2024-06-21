@@ -55,6 +55,8 @@ impl BasicSpawner for PpsSpawner {
             id,
         });
 
+       
+
         let action = SpawnAction::create_pps(
             id,
             self.config.address.clone(),
@@ -96,3 +98,68 @@ impl BasicSpawner for PpsSpawner {
         "PPS"
     }
 }
+
+
+#[cfg(test)]
+mod tests {
+
+    use tokio::sync::mpsc::{self};
+
+    use crate::daemon::{
+        config::PpsConfigSource,
+        spawn::{pps::PpsSpawner, tests::get_create_pps_params, BasicSpawner, SourceRemovalReason, SourceRemovedEvent
+        },
+        system::MESSAGE_BUFFER_SIZE,
+    };
+
+    #[tokio::test]
+    async fn creates_a_source() {
+        let mut spawner = PpsSpawner::new(PpsConfigSource {
+            address: "/dev/example".to_string(),
+            measurement_noise: 0.001,
+        });
+        let spawner_id = spawner.get_id();
+        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+
+        assert!(!spawner.is_complete());
+        spawner.try_spawn(&action_tx).await.unwrap();
+        let res = action_rx.try_recv().unwrap();
+        assert_eq!(res.id, spawner_id);
+        let params = get_create_pps_params(res);
+        assert_eq!(params.addr.to_string(), "/dev/example");
+
+        // Should be complete after spawning
+        assert!(spawner.is_complete());
+    }
+
+    #[tokio::test]
+    async fn recreates_a_source() {
+        let mut spawner = PpsSpawner::new(PpsConfigSource {
+            address: "/dev/example".to_string(),
+            measurement_noise: 0.001,
+        });
+        let (action_tx, mut action_rx) = mpsc::channel(MESSAGE_BUFFER_SIZE);
+
+        assert!(!spawner.is_complete());
+        spawner.try_spawn(&action_tx).await.unwrap();
+        let res = action_rx.try_recv().unwrap();
+        let params = get_create_pps_params(res);
+        assert!(spawner.is_complete());
+
+        spawner
+            .handle_source_removed(SourceRemovedEvent {
+                id: params.id,
+                reason: SourceRemovalReason::NetworkIssue,
+            })
+            .await
+            .unwrap();
+
+        assert!(!spawner.is_complete());
+        spawner.try_spawn(&action_tx).await.unwrap();
+        let res = action_rx.try_recv().unwrap();
+        let params = get_create_pps_params(res);
+        assert_eq!(params.addr.to_string(), "/dev/example");
+        assert!(spawner.is_complete());
+    }
+}
+
