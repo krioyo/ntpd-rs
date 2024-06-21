@@ -15,14 +15,16 @@ enum BoundType {
 // is also statistically more sound. Any difference (larger set of accepted sources)
 // can be compensated for if desired by setting tighter bounds on the weights
 // determining the confidence interval.
+
 pub(super) fn select<Index: Copy>(
     synchronization_config: &SynchronizationConfig,
     algo_config: &AlgorithmConfig,
     candidates: Vec<SourceSnapshot<Index>>,
 ) -> Vec<SourceSnapshot<Index>> {
     let mut bounds: Vec<(f64, BoundType)> = Vec::with_capacity(2 * candidates.len());
-
+    
     for snapshot in candidates.iter() {
+        println!("current snapshot: {} {}", snapshot.offset(), snapshot.offset_uncertainty());
         let radius = snapshot.offset_uncertainty() * algo_config.range_statistical_weight
             + snapshot.delay * algo_config.range_delay_weight;
         if radius > algo_config.maximum_source_uncertainty
@@ -51,13 +53,16 @@ pub(super) fn select<Index: Copy>(
             maxt = *time;
         }
     }
-
     if max >= synchronization_config.minimum_agreeing_sources && max * 4 > bounds.len() {
         candidates
             .iter()
             .filter(|snapshot| {
                 let radius = snapshot.offset_uncertainty() * algo_config.range_statistical_weight
                     + snapshot.delay * algo_config.range_delay_weight;
+                println!("first: {}", radius <= algo_config.maximum_source_uncertainty);
+                println!("second: {}", snapshot.offset() - radius <= maxt); 
+                println!("third: {}", snapshot.offset() + radius >= maxt);
+                println!("fourth: {}", snapshot.leap_indicator.is_synchronized());
                 radius <= algo_config.maximum_source_uncertainty
                     && snapshot.offset() - radius <= maxt
                     && snapshot.offset() + radius >= maxt
@@ -66,6 +71,7 @@ pub(super) fn select<Index: Copy>(
             .cloned()
             .collect()
     } else {
+        println!("doesnt get selected");
         vec![]
     }
 }
