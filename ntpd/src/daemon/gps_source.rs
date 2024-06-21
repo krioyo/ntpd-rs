@@ -34,10 +34,10 @@ pub(crate) struct GpsSourceTask<C: 'static + NtpClock + Send, T: Wait> {
 
     source: GpsSource,
 
-    // we don't store the real origin timestamp in the packet, because that would leak our
-    // system time to the network (and could make attacks easier). So instead there is some
-    // garbage data in the origin_timestamp field, and we need to track and pass along the
-    // actual origin timestamp ourselves.
+    /// we don't store the real origin timestamp in the packet, because that would leak our
+    /// system time to the network (and could make attacks easier). So instead there is some
+    /// garbage data in the origin_timestamp field, and we need to track and pass along the
+    /// actual origin timestamp ourselves.
     /// Timestamp of the last packet that we sent
     last_send_timestamp: Option<NtpTimestamp>,
     gps: Gps,
@@ -58,7 +58,6 @@ where
                 () = &mut poll_wait => {
                     SelectResult::Timer
                 },
-                // result = self.gps.current_data() => SelectResult::Recv(result)
                 result = self.gps.current_data() => {
                     if result.is_err() {
                         SelectResult::Recv(Err(result.unwrap_err()))
@@ -66,47 +65,10 @@ where
                         SelectResult::Recv(result)
                     }
                 }
-                // result = match gps.current_data() {
-                //     Ok(Some(offset)) => SelectResult::Recv(result),
-                //     // Ok(None) => continue,
-                //     Err(e) => {
-                //         eprintln!("Error processing GPS data: {}", e);
-                //     }
-                // }
-
             };
 
             let actions = match selected {
                 SelectResult::Recv(result) => {
-                    //tracing::debug!("accept gps time stamp");
-                    // match result {
-                    //     Ok(None) => continue,
-                    //     Err(e) => info!("there was an error"),
-                    //     Some(result) => {
-                    //     //    match accept_gps_time::<>(result) {
-                    //     //         AcceptResult::Accept(offset) => {
-                    //     //             //info!("gps time has result");
-                    //     //             // let send_timestamp = match self.last_send_timestamp {
-                    //     //             //     Some(ts) => ts,
-                    //     //             //     None => {
-                    //     //             //         debug!(
-                    //     //             //             "we received a message without having sent one; discarding"
-                    //     //             //         );
-                    //     //             //         continue;
-                    //     //             //     }
-                    //     //             // };
-                    //     //             println!("offset: {:?}", offset);
-                    //     //             self.source.handle_incoming(
-                    //     //                 NtpInstant::now(),
-                    //     //                 offset,
-                    //     //             )
-                    //     //         }
-                            
-                    //     //         AcceptResult::Ignore => GpsSourceActionIterator::default(),
-                    //     //     }
-                    //     GpsSourceActionIterator::default()
-                    //     }
-                    // }
                     match result {
                         Ok(Some(data)) => {
                             // Process GPS data

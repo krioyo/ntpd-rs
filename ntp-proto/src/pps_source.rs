@@ -6,19 +6,19 @@ use std::time::Duration;
 use tracing::{instrument, warn};
 
 #[derive(Debug)]
-pub struct GpsSource {
+pub struct PpsSource {
 
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct GpsSourceUpdate {
+pub struct PpsSourceUpdate {
     pub(crate) measurement: Option<Measurement>,
 }
 
 #[cfg(feature = "__internal-test")]
-impl GpsSourceUpdate {
+impl PpsSourceUpdate {
     pub fn measurement(measurement: Measurement) -> Self {
-        GpsSourceUpdate {
+        PpsSourceUpdate {
             measurement: Some(measurement),
         }
     }
@@ -26,11 +26,11 @@ impl GpsSourceUpdate {
 
 #[derive(Debug, Clone)]
 #[allow(clippy::large_enum_variant)]
-pub enum GpsSourceAction {
+pub enum PpsSourceAction {
     /// Send a message over the network. When this is issued, the network port maybe changed.
     Send(),
     /// Send an update to [`System`](crate::system::System)
-    UpdateSystem(GpsSourceUpdate),
+    UpdateSystem(PpsSourceUpdate),
     /// Call [`NtpSource::handle_timer`] after given duration
     SetTimer(Duration),
     /// A complete reset of the connection is necessary, including a potential new NTSKE client session and/or DNS lookup.
@@ -40,11 +40,11 @@ pub enum GpsSourceAction {
 }
 
 #[derive(Debug)]
-pub struct GpsSourceActionIterator {
-    iter: <Vec<GpsSourceAction> as IntoIterator>::IntoIter,
+pub struct PpsSourceActionIterator {
+    iter: <Vec<PpsSourceAction> as IntoIterator>::IntoIter,
 }
 
-impl Default for GpsSourceActionIterator {
+impl Default for PpsSourceActionIterator {
     fn default() -> Self {
         Self {
             iter: vec![].into_iter(),
@@ -52,16 +52,16 @@ impl Default for GpsSourceActionIterator {
     }
 }
 
-impl Iterator for GpsSourceActionIterator {
-    type Item = GpsSourceAction;
+impl Iterator for PpsSourceActionIterator {
+    type Item = PpsSourceAction;
 
     fn next(&mut self) -> Option<Self::Item> {
         self.iter.next()
     }
 }
 
-impl GpsSourceActionIterator {
-    fn from(data: Vec<GpsSourceAction>) -> Self {
+impl PpsSourceActionIterator {
+    fn from(data: Vec<PpsSourceAction>) -> Self {
         Self {
             iter: data.into_iter(),
         }
@@ -71,40 +71,35 @@ impl GpsSourceActionIterator {
 macro_rules! actions {
     [$($action:expr),*] => {
         {
-            GpsSourceActionIterator::from(vec![$($action),*])
+            PpsSourceActionIterator::from(vec![$($action),*])
         }
     }
 }
 
-impl GpsSource {
+impl PpsSource {
     #[instrument]
-    pub fn new(
-    ) -> (Self, GpsSourceActionIterator) {
+    pub fn new() -> (Self, PpsSourceActionIterator) {
         (
-            Self {
-            },
-            actions!(GpsSourceAction::SetTimer(Duration::from_secs(0))),
+            Self {},
+            actions!(PpsSourceAction::SetTimer(Duration::from_secs(0))),
         )
     }
 
+
+
     #[instrument(skip(self))]
-    pub fn handle_incoming(
-        &mut self,
-        local_clock_time: NtpInstant,
-        offset: NtpDuration,
-        timestamp: NtpTimestamp,
-    ) -> GpsSourceActionIterator {
-        
-        // generate a measurement
-        let measurement = Measurement::from_gps(
-            offset,
-            local_clock_time,
-            timestamp,
-        );
-       
-        actions!(GpsSourceAction::UpdateSystem(GpsSourceUpdate {
-            measurement: Some(measurement),
-        }))
-       
+        pub fn handle_incoming(
+            &mut self,
+            local_clock_time: NtpInstant,
+            offset: NtpDuration,
+            ntp_timestamp: NtpTimestamp,
+        ) -> PpsSourceActionIterator {
+            // generate a measurement
+            let measurement = Measurement::from_pps(offset, local_clock_time, ntp_timestamp);
+           
+            actions!(PpsSourceAction::UpdateSystem(PpsSourceUpdate {
+                measurement: Some(measurement),
+            }))
     }
 }
+    

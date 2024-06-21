@@ -142,7 +142,12 @@ impl InitialSourceFilter {
             self.roundtriptime_stats.update(gps_measurement.measurementnoise.to_seconds());
             println!("gps_measurements offset in seconds: {:?}", gps_measurement.offset.to_seconds());
             self.init_offset.update(gps_measurement.offset.to_seconds());
-        }else{
+        } 
+        
+        if let Some(pps_measurement) = &measurement.pps {
+            self.roundtriptime_stats.update(pps_measurement.measurementnoise.to_seconds());
+            self.init_offset.update(pps_measurement.offset.to_seconds());
+        } else{
             self.roundtriptime_stats
             .update(measurement.delay.to_seconds());
              self.init_offset.update(measurement.offset.to_seconds());
@@ -232,17 +237,26 @@ impl SourceFilter {
             // Provide default values for gps_noise and gps_offset
             println!("No gps meassurement");
             (0.0, 0.0)
+        };
+        // Incorporate PPS measurements if they exist, or provide default values
+        let (_pps_noise, _pps_offset) = if let Some(pps_measurement) = &measurement.pps {
+            (pps_measurement.measurementnoise.to_seconds(), pps_measurement.offset.to_seconds())
+        } else {
+            // Provide default values for pps_noise and pps_offset
+            (0.0, 0.0)
         };   
 
         println!("noise: {}, offset {}", _gps_noise, gps_offset);
         let measurement_transform = Matrix::new([[1., 0.]]);
 
-        if let Some(_gps_measurement) = &measurement.gps{
+        if let Some(_gps_measurement) = &measurement.gps {
         // Kalman filter update for GPS
             let gps_measurement_noise = Matrix::new([[_gps_noise]]);
             println!("gps_measuremtn noise matrix {:?}", gps_measurement_noise);
-            let gps_measurement_vec = Vector::new_vector([_gps_measurement.offset.to_seconds()]);
+            let gps_measurement_vec = Vector::new_vector([gps_offset]);
             println!("gps_measurement vector {:?}", gps_measurement_vec);
+            println!("state: {:?}", self.state);
+            println!("measurement_transform: {:?}", measurement_transform);
             let gps_difference = gps_measurement_vec - measurement_transform * self.state;
             println!("gps_difference {:?}", gps_difference);
             let gps_difference_covariance = measurement_transform * self.uncertainty * measurement_transform.transpose() + gps_measurement_noise;
@@ -268,6 +282,31 @@ impl SourceFilter {
             trace!(p, weight, "Measurement absorbed");
 
             println!("done absorbing message: {} {} {}", p, weight, m_delta_t);
+            return (p, weight, m_delta_t);
+
+        } 
+        
+        if let Some(_pps_measurement) = &measurement.pps {
+            let pps_measurement_noise = Matrix::new([[_pps_noise]]);
+            let pps_measurement_vec = Vector::new_vector([_pps_offset]);
+            let pps_difference = pps_measurement_vec - measurement_transform * self.state;
+            let pps_difference_covariance = measurement_transform * self.uncertainty * measurement_transform.transpose() + pps_measurement_noise;
+            let pps_update_strength = self.uncertainty * measurement_transform.transpose() * pps_difference_covariance.inverse();
+            self.state = self.state + pps_update_strength * pps_difference;
+            self.uncertainty = ((Matrix::unit() - pps_update_strength * measurement_transform) * self.uncertainty).symmetrize();
+
+            // Statistics
+            let p = chi_1(pps_difference.inner(pps_difference_covariance.inverse() * pps_difference));
+            println!("p statistic {}", p);
+            // Calculate an indicator of how much of the measurement was incorporated
+            // into the state. 1.0 - is needed here as this should become lower as
+            // measurement noise's contribution to difference uncertainty increases.
+            let weight = 1.0 - pps_measurement_noise.determinant() / pps_difference_covariance.determinant();
+        
+
+            self.last_measurement = measurement;
+
+            trace!(p, weight, "Measurement absorbed");
             (p, weight, m_delta_t)
         }else{
             // Kalman filter update for NTP
@@ -285,6 +324,7 @@ impl SourceFilter {
                 .symmetrize();
 
             // Statistics
+            
             let p = chi_1(difference.inner(difference_covariance.inverse() * difference));
             println!("p statistic {}", p);
             // Calculate an indicator of how much of the measurement was incorporated
@@ -503,6 +543,7 @@ impl SourceState {
                 filter.update(measurement);
                 println!("filter samples: {}", filter.samples);
                 if filter.samples == 8 {
+
                     println!("state matrix: {:?}", [filter.init_offset.mean(), 0.]);
                     *self = SourceState(SourceStateInner::Stable(SourceFilter {
                         state: Vector::new_vector([filter.init_offset.mean(), 0.]),
@@ -685,6 +726,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -707,6 +749,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(matches!(source, SourceState(SourceStateInner::Initial(_))));
@@ -736,6 +779,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -759,6 +803,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(matches!(source, SourceState(SourceStateInner::Stable(_))));
@@ -788,6 +833,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -811,6 +857,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(matches!(source, SourceState(SourceStateInner::Stable(_))));
@@ -1013,6 +1060,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -1053,6 +1101,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -1090,6 +1139,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1110,6 +1160,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1130,6 +1181,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1150,6 +1202,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1170,6 +1223,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1190,6 +1244,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1210,6 +1265,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1230,6 +1286,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!((source.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
@@ -1259,6 +1316,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1279,6 +1337,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1299,6 +1358,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1319,6 +1379,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0, 
                 gps: None,
+                pps: None,
             },
         );
         source.process_offset_steering(4e-3);
@@ -1340,6 +1401,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0, 
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1360,6 +1422,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0, 
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1380,6 +1443,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0, 
                 gps: None,
+                pps: None,
             },
         );
         assert!(source.snapshot(0_usize).unwrap().uncertainty.entry(1, 1) > 1.0);
@@ -1400,6 +1464,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0, 
                 gps: None,
+                pps: None,
             },
         );
         assert!((source.snapshot(0_usize).unwrap().state.ventry(0) - 3.5e-3).abs() < 1e-7);
@@ -1441,6 +1506,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None, 
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -1568,6 +1634,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -1630,6 +1697,7 @@ mod tests {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: None,
+            pps: None,
         };
     
         for _ in 0..7 {
@@ -1680,6 +1748,7 @@ mod tests {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: base,
@@ -1700,6 +1769,7 @@ mod tests {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: None,
+            pps: None,
         };
 
         source.update_self_using_measurement(
@@ -1722,6 +1792,7 @@ mod tests {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: None,
+            pps: None,
         };
 
         let result = source.update_self_using_measurement(

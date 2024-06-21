@@ -3,12 +3,7 @@ use std::{collections::HashMap, fmt::Debug, hash::Hash, time::Duration};
 use tracing::{error, info, instrument};
 
 use crate::{
-    clock::NtpClock,
-    config::{SourceDefaultsConfig, SynchronizationConfig},
-    packet::NtpLeapIndicator,
-    source::Measurement,
-    system::TimeSnapshot,
-    time_types::{NtpDuration, NtpTimestamp},
+    clock::NtpClock, config::{SourceDefaultsConfig, SynchronizationConfig}, packet::NtpLeapIndicator, source::Measurement, system::TimeSnapshot, time_types::{NtpDuration, NtpTimestamp}
 };
 
 use self::{
@@ -25,13 +20,14 @@ pub(super) mod config;
 pub mod matrix;
 mod select;
 pub mod source;
+pub mod combine_with_pps;
 
 fn sqr(x: f64) -> f64 {
     x * x
 }
 
 #[derive(Debug, Clone)]
-struct SourceSnapshot<Index: Copy> {
+pub struct SourceSnapshot<Index: Copy> {
     index: Index,
     state: Vector<2>,
     uncertainty: Matrix<2, 2>,
@@ -51,6 +47,14 @@ impl<Index: Copy> SourceSnapshot<Index> {
 
     fn offset_uncertainty(&self) -> f64 {
         self.uncertainty.entry(0, 0).sqrt()
+    }
+
+    fn get_state_vector(&self) -> Vector<2> {
+        self.state
+    }
+
+    fn get_uncertainty_matrix(&self) -> Matrix<2, 2> {
+        self.uncertainty
     }
 
     fn observe(&self) -> ObservableSourceTimedata {
@@ -76,11 +80,15 @@ pub struct KalmanClockController<C: NtpClock, SourceId: Hash + Eq + Copy + Debug
     timedata: TimeSnapshot,
     desired_freq: f64,
     in_startup: bool,
+    pps_source_id: Option<SourceId>,
 }
 
 impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, SourceId> {
     #[instrument(skip(self))]
     fn update_source(&mut self, id: SourceId, measurement: Measurement) -> bool {
+        if let Some(_pps_measurement) = &measurement.pps{
+            self.pps_source_id = Some(id);
+        }
         self.sources.get_mut(&id).map(|state| {
             state.0.update_self_using_measurement(
                 &self.source_defaults_config,
@@ -91,7 +99,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
     }
 
     fn update_clock(&mut self, time: NtpTimestamp) -> StateUpdate<SourceId> {
-        // ensure all filters represent the same (current) time
+        //ensure all filters represent the same (current) time
         if self
             .sources
             .iter()
@@ -104,24 +112,81 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> KalmanClockController<C, S
                 next_update: None,
             };
         }
-        
         for (_, (state, _)) in self.sources.iter_mut() {
             state.progress_filtertime(time);
         }
-        let selection = select::select(
-            &self.synchronization_config,
-            &self.algo_config,
-            self.sources
-                .iter()
+        let candidates = if let Some(pps_source) = self.pps_source_id {
+            println!("PPS SOURCE INDEX {:?}", pps_source);
+        
+            // Extract the PPS SourceSnapshot
+            let pps_snapshot = self.sources.iter()
                 .filter_map(|(index, (state, usable))| {
-                    if *usable {
-                        println!("state {:?}", state);
+                    if *index == pps_source && *usable {
                         state.snapshot(*index)
                     } else {
                         None
                     }
                 })
-                .collect(),
+                .next();
+        
+            // Collect the other candidates
+            let other_candidates: Vec<_> = self.sources.iter()
+                .filter_map(|(index, (state, usable))| {
+                    if *usable && *index != pps_source {
+                        state.snapshot(*index)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+        
+            // Combine the PPS snapshot with other candidates if PPS snapshot is found
+            if let Some(pps_snapshot) = pps_snapshot {
+                combine_with_pps::combine_with_pps::<SourceId>(pps_snapshot, other_candidates)
+            } else {
+                other_candidates
+            }
+        } else {
+            // If pps_source_id is None, just use other_candidates
+            self.sources.iter()
+                .filter_map(|(index, (state, usable))| {
+                    if *usable {
+                        state.snapshot(*index)
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        };
+
+
+        // let candidates = combine_with_pps::combine_with_pps(self.sources
+        //     .iter()
+        //     .filter_map(|(index, (state, usable))| {
+        //         if *usable {
+        //             state.snapshot(*index)
+        //         } else {
+        //             None
+        //         }
+        //     })
+        //     .collect(),
+        //     self.pps_source_id,
+        // );
+
+        // let candidates = combine_with_pps::combine_with_pps(self.sources
+        //     .iter()
+        //     .filter(|(index, (state, usable))| 
+        //         index == pps_source)
+        //     .collect(),
+        //     self.pps_source_id,
+        // );
+        println!("AFTER COMMBINE WITH PPS: Number of candidates: {}", candidates.len());
+
+        
+        let selection = select::select(
+            &self.synchronization_config,
+            &self.algo_config,
+            candidates,
         );
         println!("selection lenght: {}", selection.len());
         if let Some(combined) = combine(&selection, &self.algo_config) {
@@ -313,6 +378,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController<C, Sour
         synchronization_config: SynchronizationConfig,
         source_defaults_config: SourceDefaultsConfig,
         algo_config: Self::AlgorithmConfig,
+        pps_source_id: Option<SourceId>,
     ) -> Result<Self, C::Error> {
         // Setup clock
         clock.disable_ntp_algorithm()?;
@@ -329,6 +395,7 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController<C, Sour
             desired_freq: 0.0,
             timedata: TimeSnapshot::default(),
             in_startup: true,
+            pps_source_id,
         })
     }
 
@@ -357,11 +424,37 @@ impl<C: NtpClock, SourceId: Hash + Eq + Copy + Debug> TimeSyncController<C, Sour
         }
     }
 
+    fn source_pps_update(&mut self, id: SourceId, usable: bool) {
+        if let Some(state) = self.sources.get_mut(&id) {
+            state.1 = usable;
+        }
+    }
+
     fn source_measurement(
         &mut self,
         id: SourceId,
         measurement: Measurement,
     ) -> StateUpdate<SourceId> {
+
+        let should_update_clock = self.update_source(id, measurement);
+        self.update_desired_poll();
+        if should_update_clock {
+            self.update_clock(measurement.localtime)
+        } else {
+            StateUpdate {
+                used_sources: None,
+                time_snapshot: Some(self.timedata),
+                next_update: None,
+            }
+        }
+    }
+
+    fn source_pps_measurement(
+        &mut self,
+        id: SourceId,
+        measurement: Measurement,
+    ) -> StateUpdate<SourceId> {
+
         let should_update_clock = self.update_source(id, measurement);
         self.update_desired_poll();
         if should_update_clock {
@@ -454,6 +547,7 @@ mod tests {
             synchronization_config,
             source_defaults_config,
             algo_config,
+            None,
         )
         .unwrap();
         let mut cur_instant = NtpInstant::now();
@@ -488,6 +582,7 @@ mod tests {
                     leap: NtpLeapIndicator::NoWarning,
                     precision: 0,
                     gps: None,
+                    pps: None,
                 },
             );
         }
@@ -521,6 +616,7 @@ mod tests {
             synchronization_config,
             source_defaults_config,
             algo_config,
+            None,
         )
         .unwrap();
 
@@ -551,6 +647,7 @@ mod tests {
             synchronization_config,
             source_defaults_config,
             algo_config,
+            None,
         )
         .unwrap();
 
@@ -576,6 +673,7 @@ mod tests {
             synchronization_config,
             source_defaults_config,
             algo_config,
+            None,
         )
         .unwrap();
         let mut cur_instant = NtpInstant::now();
@@ -608,6 +706,7 @@ mod tests {
                     leap: NtpLeapIndicator::NoWarning,
                     precision: 0,
                     gps: None,
+                    pps: None,
                 },
             );
         }
@@ -634,6 +733,7 @@ mod tests {
             synchronization_config,
             source_defaults_config,
             algo_config,
+            None,
         )
         .unwrap();
         let mut cur_instant = NtpInstant::now();
@@ -666,6 +766,7 @@ mod tests {
                     leap: NtpLeapIndicator::NoWarning,
                     precision: 0,
                     gps: None,
+                    pps: None,
                 },
             );
         }

@@ -4,6 +4,7 @@ pub mod keyexchange;
 mod local_ip_provider;
 mod ntp_source;
 pub mod gps_source;
+pub mod pps_source;
 pub mod nts_key_provider;
 pub mod observer;
 mod server;
@@ -13,6 +14,8 @@ pub mod gps_without_gpsd;
 mod system;
 pub mod tracing;
 mod util;
+pub mod pps_polling;
+
 
 use std::{error::Error, path::PathBuf};
 

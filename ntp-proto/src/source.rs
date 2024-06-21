@@ -91,6 +91,11 @@ pub struct GpsMeasurement {
     pub measurementnoise: NtpDuration,
     pub offset: NtpDuration,
 }
+#[derive(Debug, Copy, Clone)]
+pub struct PpsMeasurement {
+    pub measurementnoise: NtpDuration,
+    pub offset: NtpDuration,
+}
 
 #[derive(Debug, Copy, Clone)]
 pub struct Measurement {
@@ -109,6 +114,8 @@ pub struct Measurement {
 
     // New fields from GpsMeasurement
     pub gps: Option<GpsMeasurement>,
+    // New fields from PpsMeasurement
+    pub pps: Option<PpsMeasurement>,
 }
 
 impl Measurement {
@@ -136,6 +143,7 @@ impl Measurement {
             leap: packet.leap(),
             precision: packet.precision(),
             gps: None, 
+            pps:None,
         }
     }
 
@@ -152,20 +160,45 @@ impl Measurement {
             localtime: timestamp,
             monotime: local_clock_time,
 
-            stratum: 16,
+            stratum: 1,
             root_delay: NtpDuration::default(),
             root_dispersion: NtpDuration::default(),
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: Some(GpsMeasurement {
-                measurementnoise: NtpDuration::from_seconds(0.2),
+                measurementnoise: NtpDuration::from_seconds(0.02),
+                offset,
+            }),
+            pps:None,
+        }
+    }
+    pub fn from_pps(
+        offset: NtpDuration, 
+        local_clock_time: NtpInstant,
+        ntp_timestamp: NtpTimestamp,
+    ) -> Self {
+        Self {
+            delay: NtpDuration::default(),
+            offset: NtpDuration::default(),
+            transmit_timestamp: NtpTimestamp::default(),
+            receive_timestamp: NtpTimestamp::default(),
+            localtime: ntp_timestamp,
+            monotime: local_clock_time,
+
+            stratum: 1,
+            root_delay: NtpDuration::default(),
+            root_dispersion: NtpDuration::default(),
+            leap: NtpLeapIndicator::NoWarning,
+            precision: 0,
+            gps: None,
+            pps: Some(PpsMeasurement {
+                measurementnoise: NtpDuration::from_seconds(0.02),
                 offset,
             }),
         }
     }
-
-
 }
+
 
 /// Used to determine whether the server is reachable and the data are fresh
 ///
@@ -1577,6 +1610,7 @@ mod test {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: None,
+            pps: None,
         };
 
         assert_eq!(measurement.delay, NtpDuration::from_seconds(0.001));
@@ -1605,6 +1639,7 @@ mod test {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: Some(gps_measurement),
+            pps: None,
         };
 
         // Assert that the fields are correctly set
@@ -1638,6 +1673,7 @@ mod test {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: Some(gps_measurement),
+            pps: None,
         };
 
         let mut initial_filter = InitialSourceFilter {
@@ -1677,6 +1713,7 @@ mod test {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: Some(gps_measurement),
+            pps: None,
         };
 
         let mut source_filter = SourceFilter {
@@ -1721,6 +1758,7 @@ mod test {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: Some(gps_measurement),
+            pps: None,
         };
 
         assert_eq!(measurement.delay, NtpDuration::ZERO);
@@ -1752,6 +1790,7 @@ mod test {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: NtpTimestamp::default(),
@@ -1789,6 +1828,7 @@ mod test {
                 leap: NtpLeapIndicator::NoWarning,
                 precision: 0,
                 gps: None,
+                pps: None,
             },
             prev_was_outlier: false,
             last_iter: NtpTimestamp::default(),
@@ -1808,6 +1848,7 @@ mod test {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: None,
+            pps: None,
         };
 
         // The filter should identify this as an outlier
@@ -1839,6 +1880,7 @@ mod test {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: Some(gps_measurement),
+            pps: None,
         };
 
         assert_eq!(measurement.delay, max_duration);
@@ -1871,6 +1913,7 @@ mod test {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: Some(gps_measurement),
+            pps: None,
         };
 
         let mut initial_filter = InitialSourceFilter {
@@ -1973,6 +2016,7 @@ mod test {
             leap: NtpLeapIndicator::NoWarning,
             precision: 0,
             gps: Some(gps_measurement),
+            pps: None,
         };
 
         let mut source_filter = SourceFilter {
