@@ -105,10 +105,10 @@ pub async fn spawn(
         tracing::error!("Could not spawn gps source: {}", e);
         std::io::Error::new(std::io::ErrorKind::Other, e)
     })?;
-    let pps_source_id = system.add_spawner(PpsSpawner::new()).map_err(|e| {
+    system.add_spawner(PpsSpawner::new()).map_err(|e| {
         tracing::error!("Could not spawn pps source: {}", e);
         std::io::Error::new(std::io::ErrorKind::Other, e)
-    })?.as_i32();
+    })?;
 
     // // Update the pps_source_id in system
     // system.update_pps_source_id(pps_source_id);
@@ -176,7 +176,6 @@ struct SystemSpawnerData {
 struct SystemTask<C: NtpClock, T: Wait> {
     _wait: PhantomData<SingleshotSleep<T>>,
     source_defaults_config: SourceDefaultsConfig,
-    synchronization_config: SynchronizationConfig, // Add this field
     clock: C, // Add this field
     system: System<C, SourceId>,
     system_snapshot_sender: tokio::sync::watch::Sender<SystemSnapshot>,
@@ -196,7 +195,7 @@ struct SystemTask<C: NtpClock, T: Wait> {
     pps_source_id: i32,
 }
 
-
+#[allow(clippy::too_many_arguments)]
 impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
     fn new(
         clock: C,
@@ -210,8 +209,8 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
     ) -> (Self, DaemonChannels) {
         let system = System::new(
             clock.clone(),
-            synchronization_config.clone(),
-            source_defaults_config.clone(),
+            synchronization_config,
+            source_defaults_config,
             ip_list.borrow().clone(),
         );
 
@@ -230,7 +229,6 @@ impl<C: NtpClock + Sync, T: Wait> SystemTask<C, T> {
             SystemTask {
                 _wait: PhantomData,
                 source_defaults_config,
-                synchronization_config, 
                 clock: clock.clone(), 
                 system,
                 system_snapshot_sender,
