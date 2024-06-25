@@ -324,33 +324,4 @@ mod tests {
     }
 }
 
-// fn parse_gps_time(data: &std::option::Option<f64>) -> Result<NtpDuration, Box<dyn std::error::Error>> {
-//     // Implement the logic to parse GPS time from the GPSData struct.
-//     // This is a placeholder implementation.
-//     info!(data);
-//     println!("in parse_gps_time: data = {:?}", data);
-//     let unix_timestamp =  Some(data.unwrap() as i64);
-//     // Handle the Option<u64>
-//     let ntp_timestamp = match unix_timestamp {
-//         Some(ts) => from_unix_timestamp(ts),
-//         None => return Err("Failed to parse GPS time".into()),
-//     };
-
-//     //let ntpTimestamp = from_unix_timestamp(unix_timestamp);
-
-
-//  // Replace this with actual parsing logic
-//     Ok(ntp_timestamp)
-// }
-
-// pub fn from_unix_timestamp(unix_timestamp: i64) -> NtpDuration {
-//     const UNIX_TO_NTP_OFFSET: i64 = 2_208_988_800; 
-//     let ntp_seconds = unix_timestamp + UNIX_TO_NTP_OFFSET;
-
-//     let fraction = 0u32;
-
-//     let timestamp = (ntp_seconds << 32) | (fraction as i64);
-
-//     NtpDuration::from_fixed_int(timestamp)
-// }
 
