@@ -4,17 +4,7 @@ pub(crate) fn combine_with_pps<Index: Copy + PartialEq + std::fmt::Debug>(
     pps: SourceSnapshot<Index>,
     candidates: Vec<SourceSnapshot<Index>>,
 ) -> Vec<SourceSnapshot<Index>> {
-    println!("COMBINE WITH PPS: Number of candidates: {}", candidates.len());
-    for snapshot in &candidates {
-        println!(
-            "COMBINE PPS uncertainty: {:?}, offset: {:?}",
-            snapshot.offset_uncertainty(),
-            snapshot.offset()
-        );
-    }
-
     let mut results = Vec::new();
-
     for snapshot in &candidates {
         results.push(snapshot.clone());
         let combined = combine_sources(pps.clone(), snapshot.clone());

@@ -72,10 +72,8 @@ where
                     match result {
                         Ok(Some(data)) => {
                             // Process GPS data
-                            println!("Offset between GPS time and system time: {:.6} seconds and the gps time is {:?}", data.0, data.1);
                             match accept_gps_time::<>(result) {
                                             AcceptResult::Accept((offset, timestamp)) => {
-                                                println!("offset: {:?}", offset);
                                                 self.source.handle_incoming(NtpInstant::now(),offset, timestamp, self.gps.measurement_noise) 
                                             }
                                             AcceptResult::Ignore => GpsSourceActionIterator::default(),
@@ -84,21 +82,16 @@ where
                         }
                         Ok(None) => {
                             // Handle the case where no data is available
-                            println!("No GPS data available");
                             GpsSourceActionIterator::default()
                         }
                         Err(e) => {
                             // Handle the error
-                            eprintln!("Error processing GPS data: {}", e);
                             GpsSourceActionIterator::default()
                         }
                     }
                     
                 }
                 SelectResult::Timer => {
-                    // tracing::debug!("wait completed");
-                    // let system_snapshot = *self.channels.system_snapshot_receiver.borrow();
-                    // self.source.handle_timer(system_snapshot);
                     GpsSourceActionIterator::default()
                 }
             };
@@ -220,8 +213,6 @@ pub fn from_seconds(seconds: f64) -> NtpDuration {
     let fraction = seconds.fract();
     let ntp_fraction = (fraction * (1u64 << 32) as f64) as u32;
 
-    println!("Seconds: {}, Whole seconds: {}, Fraction: {}", seconds, whole_seconds, ntp_fraction);
-
     NtpDuration::from_seconds(seconds)
 }
 
@@ -239,7 +230,6 @@ fn accept_gps_time(
 ) -> AcceptResult {
     match result {
         Ok(data) => {
-            println!("data: {:?}", data);
             match parse_gps_time(&data) {
                 Ok((gps_duration, gps_timestamp)) => AcceptResult::Accept((gps_duration, gps_timestamp)),
                 Err(_) => AcceptResult::Ignore,
@@ -247,7 +237,6 @@ fn accept_gps_time(
         }
         Err(receive_error) => {
             warn!(?receive_error, "could not receive GPS data");
-
             AcceptResult::Ignore
         }
     }
